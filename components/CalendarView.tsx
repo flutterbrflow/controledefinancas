@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, Transaction, RecurringTransaction } from '../types';
+import { apiService } from '../services/api';
 
 interface CalendarViewProps {
   user: User;
@@ -14,42 +15,66 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
   const [newRec, setNewRec] = useState({ titulo: '', valor: '', dia: '10', categoria: 'Fixo' });
 
   useEffect(() => {
-    const savedTrans = localStorage.getItem(`transactions_${user.id}`);
-    if (savedTrans) setTransactions(JSON.parse(savedTrans));
-
-    const savedRec = localStorage.getItem(`recurring_${user.id}`);
-    if (savedRec) setRecurring(JSON.parse(savedRec));
+    const fetchData = async () => {
+      try {
+        const [transData, recData] = await Promise.all([
+          apiService.getTransactions(user.id),
+          apiService.getRecurring(user.id)
+        ]);
+        if (Array.isArray(transData)) setTransactions(transData);
+        if (Array.isArray(recData)) setRecurring(recData);
+      } catch (err) {
+        console.error("Erro ao carregar dados:", err);
+      }
+    };
+    fetchData();
   }, [user.id]);
 
-  const saveRecurring = (updated: RecurringTransaction[]) => {
-    setRecurring(updated);
-    localStorage.setItem(`recurring_${user.id}`, JSON.stringify(updated));
+  const loadRecurring = async () => {
+    try {
+      const data = await apiService.getRecurring(user.id);
+      if (Array.isArray(data)) setRecurring(data);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleAddRecurring = (e: React.FormEvent) => {
+  // Removed saveRecurring local storage helper
+
+  const handleAddRecurring = async (e: React.FormEvent) => {
     e.preventDefault();
-    const item: RecurringTransaction = {
-      id: crypto.randomUUID(),
-      userId: user.id,
-      titulo: newRec.titulo,
-      valor: parseFloat(newRec.valor),
-      diaVencimento: parseInt(newRec.dia),
-      categoria: newRec.categoria,
-      ativa: true
-    };
-    saveRecurring([...recurring, item]);
-    setIsAddingRecurring(false);
-    setNewRec({ titulo: '', valor: '', dia: '10', categoria: 'Fixo' });
+    try {
+      await apiService.addRecurring(user.id, {
+        titulo: newRec.titulo,
+        valor: parseFloat(newRec.valor),
+        diaVencimento: parseInt(newRec.dia),
+        categoria: newRec.categoria
+      });
+      loadRecurring();
+      setIsAddingRecurring(false);
+      setNewRec({ titulo: '', valor: '', dia: '10', categoria: 'Fixo' });
+    } catch (err) {
+      alert("Erro ao adicionar conta recorrente.");
+    }
   };
 
-  const toggleRecurring = (id: string) => {
-    const updated = recurring.map(r => r.id === id ? { ...r, ativa: !r.ativa } : r);
-    saveRecurring(updated);
+  const toggleRecurring = async (id: string) => {
+    try {
+      await apiService.toggleRecurring(user.id, id);
+      loadRecurring();
+    } catch (err) {
+      alert("Erro ao atualizar status.");
+    }
   };
 
-  const deleteRecurring = (id: string) => {
-    if (confirm('Excluir esta conta recorrente?')) {
-      saveRecurring(recurring.filter(r => r.id !== id));
+  const deleteRecurring = async (id: string) => {
+    if (confirm('Excluir esta conta recomendente?')) {
+      try {
+        await apiService.deleteRecurring(user.id, id);
+        loadRecurring();
+      } catch (err) {
+        alert("Erro ao excluir conta.");
+      }
     }
   };
 
@@ -73,7 +98,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
           <p className="text-gray-500">Acompanhe seus vencimentos e histórico visual.</p>
         </div>
         <div className="flex gap-2">
-          <button 
+          <button
             onClick={() => setIsAddingRecurring(true)}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-all shadow-sm flex items-center justify-center min-w-[160px]"
           >
@@ -105,7 +130,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
               const day = i + 1;
               const { transactions: dTrans, recurring: dRec } = getDayData(day);
               const isToday = day === new Date().getDate() && currentDate.getMonth() === new Date().getMonth() && currentDate.getFullYear() === new Date().getFullYear();
-              
+
               return (
                 <div key={day} className={`bg-white p-1 h-20 sm:h-24 border-t border-gray-50 flex flex-col gap-0.5 overflow-hidden group hover:bg-blue-50/30 transition-colors ${isToday ? 'bg-blue-50/50' : ''}`}>
                   <span className={`text-[10px] font-bold ${isToday ? 'bg-blue-600 text-white w-5 h-5 flex items-center justify-center rounded-full' : 'text-gray-400'}`}>{day}</span>
@@ -132,10 +157,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
           <h3 className="font-bold text-lg text-gray-900 mb-4">Contas Recorrentes</h3>
           {isAddingRecurring && (
             <form onSubmit={handleAddRecurring} className="mb-6 p-4 bg-gray-50 rounded-lg space-y-3 animate-in slide-in-from-top-4 duration-300">
-              <input type="text" required placeholder="Título (ex: Netflix)" className="w-full text-sm p-2 rounded border border-gray-200" value={newRec.titulo} onChange={e => setNewRec({...newRec, titulo: e.target.value})} />
+              <input type="text" required placeholder="Título (ex: Netflix)" className="w-full text-sm p-2 rounded border border-gray-200" value={newRec.titulo} onChange={e => setNewRec({ ...newRec, titulo: e.target.value })} />
               <div className="grid grid-cols-2 gap-2">
-                <input type="number" required placeholder="Valor" className="w-full text-sm p-2 rounded border border-gray-200" value={newRec.valor} onChange={e => setNewRec({...newRec, valor: e.target.value})} />
-                <input type="number" min="1" max="31" required placeholder="Dia" className="w-full text-sm p-2 rounded border border-gray-200" value={newRec.dia} onChange={e => setNewRec({...newRec, dia: e.target.value})} />
+                <input type="number" required placeholder="Valor" className="w-full text-sm p-2 rounded border border-gray-200" value={newRec.valor} onChange={e => setNewRec({ ...newRec, valor: e.target.value })} />
+                <input type="number" min="1" max="31" required placeholder="Dia" className="w-full text-sm p-2 rounded border border-gray-200" value={newRec.dia} onChange={e => setNewRec({ ...newRec, dia: e.target.value })} />
               </div>
               <div className="flex gap-2">
                 <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded text-sm font-bold">Adicionar</button>

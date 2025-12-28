@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, Goal, Transaction } from '../types';
+import { apiService } from '../services/api';
 import { GoogleGenAI } from "@google/genai";
 
 interface GoalsProps {
@@ -12,59 +13,73 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [newGoal, setNewGoal] = useState({ titulo: '', valorMeta: '', cor: '#2563EB' });
-  
+
   // AI State
   const [aiAdvice, setAiAdvice] = useState<string>('');
   const [loadingAi, setLoadingAi] = useState(false);
 
   useEffect(() => {
-    const savedGoals = localStorage.getItem(`goals_${user.id}`);
-    if (savedGoals) {
-      setGoals(JSON.parse(savedGoals));
-    }
-    const savedTransactions = localStorage.getItem(`transactions_${user.id}`);
-    if (savedTransactions) {
-      setTransactions(JSON.parse(savedTransactions));
-    }
+    const fetchData = async () => {
+      try {
+        const [goalsData, transactionsData] = await Promise.all([
+          apiService.getGoals(user.id),
+          apiService.getTransactions(user.id)
+        ]);
+        if (Array.isArray(goalsData)) setGoals(goalsData);
+        if (Array.isArray(transactionsData)) setTransactions(transactionsData);
+      } catch (err) {
+        console.error("Erro ao carregar dados:", err);
+      }
+    };
+    fetchData();
   }, [user.id]);
 
-  const saveGoals = (updated: Goal[]) => {
-    setGoals(updated);
-    localStorage.setItem(`goals_${user.id}`, JSON.stringify(updated));
+  const loadGoals = async () => {
+    try {
+      const data = await apiService.getGoals(user.id);
+      if (Array.isArray(data)) setGoals(data);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleAddGoal = (e: React.FormEvent) => {
+  // Removed saveGoals local storage helper
+
+  const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGoal.titulo || !newGoal.valorMeta) return;
 
-    const goal: Goal = {
-      id: crypto.randomUUID(),
-      userId: user.id,
-      titulo: newGoal.titulo,
-      valorMeta: parseFloat(newGoal.valorMeta),
-      valorAtual: 0,
-      cor: newGoal.cor,
-      createdAt: new Date().toISOString()
-    };
-
-    saveGoals([...goals, goal]);
-    setIsAdding(false);
-    setNewGoal({ titulo: '', valorMeta: '', cor: '#2563EB' });
+    try {
+      await apiService.addGoal(user.id, {
+        titulo: newGoal.titulo,
+        valorMeta: parseFloat(newGoal.valorMeta),
+        cor: newGoal.cor
+      });
+      loadGoals();
+      setIsAdding(false);
+      setNewGoal({ titulo: '', valorMeta: '', cor: '#2563EB' });
+    } catch (err) {
+      alert("Erro ao adicionar meta.");
+    }
   };
 
-  const updateGoalProgress = (id: string, amount: number) => {
-    const updated = goals.map(g => {
-      if (g.id === id) {
-        return { ...g, valorAtual: Math.max(0, g.valorAtual + amount) };
-      }
-      return g;
-    });
-    saveGoals(updated);
+  const updateGoalProgress = async (id: string, amount: number) => {
+    try {
+      await apiService.updateGoal(user.id, id, amount);
+      loadGoals();
+    } catch (err) {
+      alert("Erro ao atualizar progresso.");
+    }
   };
 
-  const deleteGoal = (id: string) => {
+  const deleteGoal = async (id: string) => {
     if (confirm('Deseja excluir esta meta?')) {
-      saveGoals(goals.filter(g => g.id !== id));
+      try {
+        await apiService.deleteGoal(user.id, id);
+        loadGoals();
+      } catch (err) {
+        alert("Erro ao excluir meta.");
+      }
     }
   };
 
@@ -76,7 +91,7 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
     setLoadingAi(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-      
+
       const context = {
         metas: goals.map(g => ({ titulo: g.titulo, alvo: g.valorMeta, atual: g.valorAtual })),
         resumoFinanceiro: {
@@ -116,7 +131,7 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
           <h2 className="text-2xl font-bold text-gray-900">Suas Metas</h2>
           <p className="text-gray-500">Transforme sonhos em planos concretos.</p>
         </div>
-        <button 
+        <button
           onClick={() => setIsAdding(true)}
           className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 active:scale-95 flex items-center justify-center"
         >
@@ -131,7 +146,7 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
         </div>
-        
+
         <div className="relative z-10 flex flex-col h-full">
           <h3 className="font-semibold text-lg mb-2 flex items-center gap-2">
             <span className="p-1 bg-blue-700 rounded-md">
@@ -155,7 +170,7 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
             </div>
           )}
 
-          <button 
+          <button
             onClick={generateGoalAIPlanner}
             disabled={loadingAi}
             className="w-full bg-white text-blue-900 py-3 rounded-lg font-bold hover:bg-blue-50 transition-colors shadow-xl disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] flex items-center justify-center gap-2"
@@ -172,7 +187,7 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
 
       {isAdding && (
         <div className="bg-white p-6 rounded-2xl border-2 border-blue-600 shadow-xl animate-in slide-in-from-top-4 duration-300 relative">
-          <button 
+          <button
             onClick={() => setIsAdding(false)}
             className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
           >
@@ -180,40 +195,40 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          
+
           <h3 className="font-bold text-xl mb-6 text-gray-900">Configurar Objetivo</h3>
           <form onSubmit={handleAddGoal} className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2 space-y-2">
               <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Título do Objetivo</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 required
                 placeholder="Ex: Reserva de Emergência, Viagem para Europa..."
                 value={newGoal.titulo}
-                onChange={(e) => setNewGoal({...newGoal, titulo: e.target.value})}
+                onChange={(e) => setNewGoal({ ...newGoal, titulo: e.target.value })}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Valor Alvo (R$)</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 required
                 placeholder="5000"
                 value={newGoal.valorMeta}
-                onChange={(e) => setNewGoal({...newGoal, valorMeta: e.target.value})}
+                onChange={(e) => setNewGoal({ ...newGoal, valorMeta: e.target.value })}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
               />
             </div>
             <div className="md:col-span-3 flex justify-end gap-3 mt-2">
-              <button 
+              <button
                 type="button"
                 onClick={() => setIsAdding(false)}
                 className="px-6 py-3 text-gray-500 font-medium hover:text-gray-700 transition-colors"
               >
                 Cancelar
               </button>
-              <button 
+              <button
                 type="submit"
                 className="bg-blue-600 text-white px-10 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
               >
@@ -234,7 +249,7 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
             </div>
             <h3 className="text-gray-900 font-bold text-xl mb-2">Sem metas no momento</h3>
             <p className="text-gray-500 max-w-xs mx-auto mb-8">Comece agora mesmo a planejar seus sonhos financeiros.</p>
-            <button 
+            <button
               onClick={() => setIsAdding(true)}
               className="text-blue-600 font-bold hover:underline"
             >
@@ -252,7 +267,7 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
                   </div>
-                  <button 
+                  <button
                     onClick={() => deleteGoal(goal.id)}
                     className="text-gray-300 hover:text-red-500 transition-colors p-1"
                   >
@@ -272,24 +287,24 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
                       <span className="text-xs text-gray-400 font-medium mb-1">de {formatCurrency(goal.valorMeta)}</span>
                     </div>
                     <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden p-0.5">
-                      <div 
+                      <div
                         className="h-full rounded-full transition-all duration-1000 shadow-sm"
-                        style={{ 
+                        style={{
                           width: `${percentage}%`,
-                          backgroundColor: goal.cor 
+                          backgroundColor: goal.cor
                         }}
                       ></div>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 pt-2">
-                    <button 
+                    <button
                       onClick={() => updateGoalProgress(goal.id, 100)}
                       className="py-3 px-3 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all border border-blue-100 active:scale-95"
                     >
                       + R$ 100
                     </button>
-                    <button 
+                    <button
                       onClick={() => updateGoalProgress(goal.id, 500)}
                       className="py-3 px-3 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all shadow-md active:scale-95"
                     >

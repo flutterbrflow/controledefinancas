@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { User } from '../types';
+import { apiService } from '../services/api';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -12,25 +13,37 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
     if (!email || !password || (!isLogin && !name)) {
       setError('Por favor, preencha todos os campos.');
+      setLoading(false);
       return;
     }
 
-    // Simulating secure authentication
-    // In a real environment, this would call a Node.js/MySQL backend
-    const mockUser: User = {
-      id: crypto.randomUUID(),
-      name: isLogin ? 'Usuário Demonstração' : name,
-      email: email
-    };
+    try {
+      let response;
+      if (isLogin) {
+        response = await apiService.login({ email, password });
+      } else {
+        response = await apiService.register({ name, email, password });
+      }
 
-    onLogin(mockUser);
+      if (response.success) {
+        onLogin(response.user);
+      } else {
+        setError(response.error || 'Erro na autenticação.');
+      }
+    } catch (err) {
+      setError('Erro ao conectar ao servidor. Verifique se o backend está rodando.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -39,7 +52,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       <div className="hidden lg:flex flex-1 bg-blue-900 p-12 flex-col justify-between text-white relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-800 rounded-full -mr-32 -mt-32 opacity-50"></div>
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-800 rounded-full -ml-48 -mb-48 opacity-30"></div>
-        
+
         <div className="z-10">
           <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center mb-8 shadow-xl">
             <span className="text-blue-900 font-bold text-xl">CF</span>
@@ -68,7 +81,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               <span className="text-white font-bold">CF</span>
             </div>
           </div>
-          
+
           <h2 className="text-3xl font-bold text-gray-900 mb-2">
             {isLogin ? 'Bem-vindo de volta' : 'Crie sua conta'}
           </h2>
@@ -86,8 +99,8 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             {!isLogin && (
               <div className="space-y-1">
                 <label className="text-sm font-medium text-gray-700">Nome Completo</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Seu nome"
@@ -98,8 +111,8 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
             <div className="space-y-1">
               <label className="text-sm font-medium text-gray-700">E-mail</label>
-              <input 
-                type="email" 
+              <input
+                type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="exemplo@email.com"
@@ -112,8 +125,8 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                 <label className="text-sm font-medium text-gray-700">Senha</label>
                 {isLogin && <button type="button" className="text-xs text-blue-600 hover:underline">Esqueceu a senha?</button>}
               </div>
-              <input 
-                type="password" 
+              <input
+                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -121,17 +134,18 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               />
             </div>
 
-            <button 
+            <button
               type="submit"
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 active:scale-[0.98]"
+              disabled={loading}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 active:scale-[0.98] disabled:opacity-50"
             >
-              {isLogin ? 'Entrar' : 'Cadastrar'}
+              {loading ? 'Carregando...' : (isLogin ? 'Entrar' : 'Cadastrar')}
             </button>
           </form>
 
           <div className="mt-8 text-center text-gray-500 text-sm">
             {isLogin ? 'Ainda não tem conta?' : 'Já possui uma conta?'} {' '}
-            <button 
+            <button
               onClick={() => setIsLogin(!isLogin)}
               className="text-blue-600 font-semibold hover:underline"
             >

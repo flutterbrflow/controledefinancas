@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Transaction } from '../types';
+import { apiService } from '../services/api';
 import { GoogleGenAI } from "@google/genai";
-import * as XLSX from 'xlsx';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  PieChart, Pie, Cell, AreaChart, Area 
+import * as ExcelJS from 'exceljs';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
 
 interface ReportsProps {
@@ -18,18 +19,21 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(`transactions_${user.id}`);
-      if (saved) {
-        setTransactions(JSON.parse(saved));
+    const loadTransactions = async () => {
+      try {
+        const data = await apiService.getTransactions(user.id);
+        if (Array.isArray(data)) {
+          setTransactions(data);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar transações:", err);
+        setError("Não foi possível carregar os dados das transações.");
       }
-    } catch (err) {
-      console.error("Erro ao carregar transações:", err);
-      setError("Não foi possível carregar os dados das transações.");
-    }
+    };
+    loadTransactions();
   }, [user.id]);
 
-  const formatCurrency = (value: number) => 
+  const formatCurrency = (value: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
   const monthlyData = useMemo(() => {
@@ -44,9 +48,10 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
       }
       transactions.forEach(t => {
         if (!t.data) return;
-        const d = new Date(t.data);
-        if (isNaN(d.getTime())) return;
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        // Parse YYYY-MM-DD sem Date object para evitar fuso horário
+        const parts = t.data.split('-');
+        if (parts.length < 2) return;
+        const key = `${parts[0]}-${parts[1]}`;
         if (months[key]) {
           if (t.valor > 0) months[key].receita += t.valor;
           else months[key].despesa += Math.abs(t.valor);
@@ -80,20 +85,33 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       const data = [];
       let runningBalance = 0;
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
       transactions.forEach(t => {
         if (!t.data) return;
-        const d = new Date(t.data);
-        if (isNaN(d.getTime())) return;
-        if (d < startOfMonth) runningBalance += t.valor;
+        const parts = t.data.split('-');
+        if (parts.length < 2) return;
+        const transMonthStr = `${parts[0]}-${parts[1]}`;
+
+        // Se a transação for de meses anteriores, entra no saldo inicial
+        if (transMonthStr < currentMonthStr) {
+          runningBalance += t.valor;
+        }
       });
+
       for (let day = 1; day <= daysInMonth; day++) {
-        const currentDate = new Date(now.getFullYear(), now.getMonth(), day).toISOString().split('T')[0];
+        const dayStr = String(day).padStart(2, '0');
+        const currentDateStr = `${currentMonthStr}-${dayStr}`;
+
         const dayTotal = transactions
-          .filter(t => t.data === currentDate)
+          .filter(t => t.data === currentDateStr)
           .reduce((acc, curr) => acc + curr.valor, 0);
+
         runningBalance += dayTotal;
         data.push({ day: String(day), saldo: runningBalance });
+
+        // Para o gráfico no dia de hoje (se for o mês atual)
         if (day === now.getDate() && now.getMonth() === new Date().getMonth()) break;
       }
       return data;
@@ -104,20 +122,40 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
 
   const COLORS = ['#1E3A8A', '#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE'];
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     if (transactions.length === 0) return;
     try {
-      const dataToExport = transactions.map(t => ({
-        'Data': t.data,
-        'Histórico': t.historico,
-        'Origem': t.dependenciaOrigem,
-        'Valor (R$)': t.valor
-      }));
-      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Transações");
-      XLSX.writeFile(workbook, `relatorio_financeiro.xlsx`);
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Transações');
+
+      worksheet.columns = [
+        { header: 'Data', key: 'data', width: 15 },
+        { header: 'Histórico', key: 'historico', width: 30 },
+        { header: 'Origem', key: 'dependenciaOrigem', width: 20 },
+        { header: 'Valor (R$)', key: 'valor', width: 15 }
+      ];
+
+      transactions.forEach(t => {
+        worksheet.addRow({
+          data: t.data,
+          historico: t.historico,
+          dependenciaOrigem: t.dependenciaOrigem,
+          valor: t.valor
+        });
+      });
+
+      worksheet.getRow(1).font = { bold: true };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `relatorio_financeiro_${new Date().toISOString().split('T')[0]}.xlsx`;
+      anchor.click();
+      window.URL.revokeObjectURL(url);
     } catch (err) {
+      console.error("Erro ao exportar Excel:", err);
       alert("Erro ao exportar Excel.");
     }
   };
@@ -163,7 +201,8 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12 print:p-0">
       {/* Estilos customizados para impressão */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @media print {
           body { background: white !important; padding: 0 !important; margin: 0 !important; }
           .no-print, header, nav, footer, button { display: none !important; }
@@ -189,16 +228,16 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
           <p className="text-gray-500">Visualize seus padrões financeiros com clareza.</p>
         </div>
         <div className="flex gap-2">
-          <button 
-            onClick={exportToExcel} 
-            disabled={transactions.length === 0} 
+          <button
+            onClick={exportToExcel}
+            disabled={transactions.length === 0}
             className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition-all flex items-center gap-2 disabled:opacity-50 text-sm shadow-sm active:scale-95"
           >
             Excel
           </button>
-          <button 
-            onClick={handlePrint} 
-            disabled={transactions.length === 0} 
+          <button
+            onClick={handlePrint}
+            disabled={transactions.length === 0}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-all flex items-center gap-2 disabled:opacity-50 text-sm shadow-sm active:scale-95"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -220,9 +259,13 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={monthlyData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
-                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none'}} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
+                  <Tooltip
+                    cursor={{ fill: '#f8fafc' }}
+                    contentStyle={{ borderRadius: '12px', border: 'none' }}
+                    formatter={(value: number) => [formatCurrency(value), '']}
+                  />
                   <Legend iconType="circle" />
                   <Bar dataKey="receita" name="Receita" fill="#1E3A8A" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="despesa" name="Despesa" fill="#3B82F6" radius={[4, 4, 0, 0]} />
@@ -245,14 +288,17 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
                 <AreaChart data={trendData}>
                   <defs>
                     <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
-                  <Tooltip contentStyle={{borderRadius: '12px', border: 'none'}} />
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '12px', border: 'none' }}
+                    formatter={(value: number) => [formatCurrency(value), 'Saldo']}
+                  />
                   <Area type="monotone" dataKey="saldo" name="Saldo" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorSaldo)" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -276,7 +322,10 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{borderRadius: '12px', border: 'none'}} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '12px', border: 'none' }}
+                    formatter={(value: number) => [formatCurrency(value), 'Total']}
+                  />
                   <Legend verticalAlign="bottom" height={36} />
                 </PieChart>
               </ResponsiveContainer>

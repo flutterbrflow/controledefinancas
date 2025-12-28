@@ -1,0 +1,16 @@
+<?php
+// Exemplo de configuração - Renomeie para config.php e preencha seus dados
+define('DB_HOST', '127.0.0.1');
+define('DB_NAME', 'controle_financas');
+define('DB_USER', 'seu_usuario');
+define('DB_PASS', 'sua_senha');
+
+// Configurações de CORS
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    exit;
+}
+?>
