@@ -9,17 +9,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "1.34.0",
+    "@google/generative-ai": "^0.24.1",
+    "@vitejs/plugin-react": "^5.1.2",
     "exceljs": "^4.4.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "recharts": "2.15.0"
+    "recharts": "2.15.0",
+    "vite": "^6.4.1"
   },
   "devDependencies": {
     "@types/exceljs": "^0.5.3",
     "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "typescript": "~5.8.2"
   }
 }

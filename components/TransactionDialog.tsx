@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Transaction } from '../types';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface TransactionDialogProps {
   isOpen: boolean;
@@ -98,20 +98,23 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
     if (!ocrImage) return;
     setLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
       const base64Data = ocrImage.split(',')[1];
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [
-            { inlineData: { data: base64Data, mimeType: 'image/jpeg' } },
-            { text: "Extract receipt info: date (YYYY-MM-DD), total value (number, negative if expense), store name, short description. Return ONLY a JSON with keys: date, value, merchant, description." }
-          ]
-        }
-      });
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      const result = await model.generateContent([
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: 'image/jpeg'
+          }
+        },
+        { text: "Extract receipt info: date (YYYY-MM-DD), total value (number, negative if expense), store name, short description. Return ONLY a JSON with keys: date, value, merchant, description." }
+      ]);
 
-      const text = response.text || "{}";
+      const response = result.response;
+
+      const text = response.text() || "{}";
       const cleanJson = text.replace(/```json|```/g, '').trim();
       const data = JSON.parse(cleanJson);
 

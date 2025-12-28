@@ -1,8 +1,10 @@
 
+// Interface que define a estrutura de um usuário
 export interface User {
   id: string;
   name: string;
   email: string;
+  avatar?: string; // URL do avatar do usuário (opcional)
 }
 
 export interface Transaction {

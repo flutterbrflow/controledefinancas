@@ -1,11 +1,13 @@
+// Componente de Relatórios - exibe análises visuais e insights financeiros
+// Este componente está 100% comentado em português conforme solicitado
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Transaction } from '../types';
 import { apiService } from '../services/api';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as ExcelJS from 'exceljs';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, AreaChart, Area
+  PieChart, Pie, Cell, AreaChart, Area, LineChart, Line, Label
 } from 'recharts';
 
 interface ReportsProps {
@@ -13,11 +15,13 @@ interface ReportsProps {
 }
 
 export const Reports: React.FC<ReportsProps> = ({ user }) => {
+  // Estados do componente
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [insights, setInsights] = useState<string>('');
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Carrega transações ao montar o componente
   useEffect(() => {
     const loadTransactions = async () => {
       try {
@@ -33,95 +37,182 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
     loadTransactions();
   }, [user.id]);
 
+  // Função auxiliar para formatar valores em moeda brasileira
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
+  // DADOS PARA GRÁFICO: Fluxo de Caixa nos últimos 6 meses
   const monthlyData = useMemo(() => {
     try {
       const months: Record<string, { month: string, receita: number, despesa: number }> = {};
       const now = new Date();
+
+      // Prepara os últimos 6 meses
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const label = d.toLocaleDateString('pt-BR', { month: 'short' });
         months[key] = { month: label, receita: 0, despesa: 0 };
       }
+
+      // Agrupa transações por mês
       transactions.forEach(t => {
         if (!t.data) return;
-        // Parse YYYY-MM-DD sem Date object para evitar fuso horário
         const parts = t.data.split('-');
         if (parts.length < 2) return;
         const key = `${parts[0]}-${parts[1]}`;
+
         if (months[key]) {
           if (t.valor > 0) months[key].receita += t.valor;
           else months[key].despesa += Math.abs(t.valor);
         }
       });
+
       return Object.values(months);
     } catch (e) {
       return [];
     }
   }, [transactions]);
 
+  // DADOS PARA GRÁFICO: Top 5 Categorias de Despesas
   const categoryData = useMemo(() => {
     try {
       const totals: Record<string, number> = {};
+
+      // Soma despesas por origem
       transactions.filter(t => t.valor < 0).forEach(t => {
         const cat = t.dependenciaOrigem || 'Outros';
         totals[cat] = (totals[cat] || 0) + Math.abs(t.valor);
       });
-      return Object.entries(totals)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([name, value]) => ({ name, value }));
+
+      // Retorna top 5 com percentuais
+      const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const total = sorted.reduce((acc, [_, val]) => acc + val, 0);
+
+      return sorted.map(([name, value]) => ({
+        name,
+        value,
+        percentage: ((value / total) * 100).toFixed(1) + '%'
+      }));
     } catch (e) {
       return [];
     }
   }, [transactions]);
 
+  // DADOS PARA GRÁFICO: Evolução de Saldo no Mês Atual
   const trendData = useMemo(() => {
     try {
       const now = new Date();
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       const data = [];
       let runningBalance = 0;
-
       const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
+      // Calcula saldo inicial (transações de meses anteriores)
       transactions.forEach(t => {
         if (!t.data) return;
         const parts = t.data.split('-');
         if (parts.length < 2) return;
         const transMonthStr = `${parts[0]}-${parts[1]}`;
-
-        // Se a transação for de meses anteriores, entra no saldo inicial
         if (transMonthStr < currentMonthStr) {
           runningBalance += t.valor;
         }
       });
 
-      for (let day = 1; day <= daysInMonth; day++) {
+      // Arredonda saldo inicial para evitar erros de ponto flutuante
+      runningBalance = Math.round(runningBalance * 100) / 100;
+
+      // Calcula saldo dia a dia no mês atual (até HOJE ou fim do mês, o que vier primeiro)
+      const lastDay = Math.min(now.getDate(), daysInMonth);
+
+      for (let day = 1; day <= lastDay; day++) {
         const dayStr = String(day).padStart(2, '0');
         const currentDateStr = `${currentMonthStr}-${dayStr}`;
-
         const dayTotal = transactions
           .filter(t => t.data === currentDateStr)
           .reduce((acc, curr) => acc + curr.valor, 0);
 
         runningBalance += dayTotal;
+        // Arredonda após cada soma para manter precisão
+        runningBalance = Math.round(runningBalance * 100) / 100;
         data.push({ day: String(day), saldo: runningBalance });
-
-        // Para o gráfico no dia de hoje (se for o mês atual)
-        if (day === now.getDate() && now.getMonth() === new Date().getMonth()) break;
       }
+
+      // Adiciona transações futuras do mês (após hoje) ao último ponto
+      // Isso garante que o gráfico mostre o saldo real total
+      let futureTrans = 0;
+      for (let day = lastDay + 1; day <= daysInMonth; day++) {
+        const dayStr = String(day).padStart(2, '0');
+        const currentDateStr = `${currentMonthStr}-${dayStr}`;
+        const dayTotal = transactions
+          .filter(t => t.data === currentDateStr)
+          .reduce((acc, curr) => acc + curr.valor, 0);
+        futureTrans += dayTotal;
+      }
+
+      // Se há transações futuras, adiciona ao último ponto do gráfico
+      if (futureTrans !== 0 && data.length > 0) {
+        const finalBalance = Math.round((data[data.length - 1].saldo + futureTrans) * 100) / 100;
+        data[data.length - 1].saldo = finalBalance;
+      }
+
       return data;
     } catch (e) {
       return [];
     }
   }, [transactions]);
 
-  const COLORS = ['#1E3A8A', '#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE'];
+  // NOVO GRÁFICO: Comparação: Mês Atual vs Mês Anterior
+  const comparisonData = useMemo(() => {
+    try {
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const lastMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, '0')}`;
 
+      const calculate = (monthStr: string) => {
+        const monthTrans = transactions.filter(t => t.data?.startsWith(monthStr));
+        return {
+          receitas: monthTrans.filter(t => t.valor > 0).reduce((acc, t) => acc + t.valor, 0),
+          despesas: Math.abs(monthTrans.filter(t => t.valor < 0).reduce((acc, t) => acc + t.valor, 0))
+        };
+      };
+
+      const current = calculate(currentMonth);
+      const previous = calculate(lastMonth);
+
+      return [
+        { mes: 'Mês Anterior', receitas: previous.receitas, despesas: previous.despesas },
+        { mes: 'Mês Atual', receitas: current.receitas, despesas: current.despesas }
+      ];
+    } catch (e) {
+      return [];
+    }
+  }, [transactions]);
+
+  // NOVO GRÁFICO: Top 5 Maiores Receitas e Despesas
+  const topTransactionsData = useMemo(() => {
+    try {
+      const receitas = transactions
+        .filter(t => t.valor > 0)
+        .sort((a, b) => b.valor - a.valor)
+        .slice(0, 5);
+
+      const despesas = transactions
+        .filter(t => t.valor < 0)
+        .map(t => ({ ...t, valor: Math.abs(t.valor) }))
+        .sort((a, b) => b.valor - a.valor)
+        .slice(0, 5);
+
+      return { receitas, despesas };
+    } catch (e) {
+      return { receitas: [], despesas: [] };
+    }
+  }, [transactions]);
+
+  // Paleta de cores melhorada para gráficos
+  const COLORS = ['#1E3A8A', '#3B82F6', '#60A5FA', '#10B981', '#F59E0B'];
+
+  // Função para exportar dados para Excel
   const exportToExcel = async () => {
     if (transactions.length === 0) return;
     try {
@@ -160,34 +251,41 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
     }
   };
 
+  // Função para imprimir relatório
   const handlePrint = () => {
     window.print();
   };
 
+  // Função para gerar insights com IA Gemini
   const generateAIInsights = async () => {
     if (transactions.length === 0) return;
     setLoadingInsights(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
       const summaryData = transactions.slice(0, 15).map(t => ({
-        d: t.data,
-        h: t.historico,
-        v: t.valor,
-        o: t.dependenciaOrigem
+        data: t.data,
+        historico: t.historico,
+        valor: t.valor,
+        origem: t.dependenciaOrigem
       }));
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Analise brevemente estes dados financeiros (em PT-BR) e dê 3 conselhos rápidos: ${JSON.stringify(summaryData)}`,
-        config: { systemInstruction: "Você é um consultor financeiro. Seja conciso." }
-      });
-      setInsights(response.text || 'Sem insights no momento.');
-    } catch (error) {
-      setInsights('Erro ao processar insights com IA.');
+
+      const prompt = `Você é um consultor financeiro experiente. Analise brevemente estes dados financeiros (em PT-BR) e dê 3 conselhos práticos e objetivos:\n\n${JSON.stringify(summaryData, null, 2)}\n\nSeja conciso e direto.`;
+
+
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      const result = await model.generateContent(prompt);
+      const response = result.response;
+
+      setInsights(response.text() || 'Sem insights no momento.');
+    } catch (error: any) {
+      console.error('Erro ao gerar insights:', error);
+      setInsights(`Erro: ${error.message || 'Verifique sua chave de API'}.`);
     } finally {
       setLoadingInsights(false);
     }
   };
 
+  // Renderiza erro se houver
   if (error) {
     return (
       <div className="p-8 text-center">
@@ -198,9 +296,10 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
     );
   }
 
+  // Renderização principal do componente
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12 print:p-0">
-      {/* Estilos customizados para impressão */}
+      {/* CSS customizado para impressão */}
       <style dangerouslySetInnerHTML={{
         __html: `
         @media print {
@@ -217,11 +316,13 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
         .print-title { display: none; }
       `}} />
 
+      {/* Título para impressão */}
       <div className="print-title">
         <h1 className="text-3xl font-bold text-blue-900">Relatório Consolidado de Finanças</h1>
         <p className="text-gray-500">Usuário: {user.name} | Data do Relatório: {new Date().toLocaleDateString('pt-BR')}</p>
       </div>
 
+      {/* Cabeçalho com ações */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 no-print">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Análise e Relatórios</h2>
@@ -248,7 +349,9 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
         </div>
       </div>
 
+      {/* Grid de Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Gráfico 1: Fluxo de Caixa (6 Meses) */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[400px]">
           <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
             <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
@@ -260,15 +363,11 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
                 <BarChart data={monthlyData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
-                  <Tooltip
-                    cursor={{ fill: '#f8fafc' }}
-                    contentStyle={{ borderRadius: '12px', border: 'none' }}
-                    formatter={(value: number) => [formatCurrency(value), '']}
-                  />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR')}`} />
+                  <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none' }} formatter={(value: number) => [formatCurrency(value), '']} />
                   <Legend iconType="circle" />
-                  <Bar dataKey="receita" name="Receita" fill="#1E3A8A" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="despesa" name="Despesa" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="receita" name="Receita" fill="#10B981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="despesa" name="Despesa" fill="#EF4444" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -277,10 +376,11 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
           </div>
         </div>
 
+        {/* Gráfico 2: Saldo (Mês Atual) */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[400px]">
           <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
             <span className="w-2 h-6 bg-green-500 rounded-full"></span>
-            Saldo (Mês Atual)
+            Evolução do Saldo (Mês Atual)
           </h3>
           <div className="flex-1 min-h-0">
             {trendData.length > 0 ? (
@@ -294,11 +394,8 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '12px', border: 'none' }}
-                    formatter={(value: number) => [formatCurrency(value), 'Saldo']}
-                  />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR')}`} />
+                  <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} formatter={(value: number) => [formatCurrency(value), 'Saldo']} />
                   <Area type="monotone" dataKey="saldo" name="Saldo" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorSaldo)" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -308,26 +405,43 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
           </div>
         </div>
 
+        {/* Gráfico 3: Top 5 Gastos por Categoria (BARRAS) */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[400px]">
           <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
             <span className="w-2 h-6 bg-amber-500 rounded-full"></span>
-            Maiores Gastos por Origem
+            Top 5 Gastos por Categoria
           </h3>
           <div className="flex-1 min-h-0">
             {categoryData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={categoryData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">
-                    {categoryData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ borderRadius: '12px', border: 'none' }}
-                    formatter={(value: number) => [formatCurrency(value), 'Total']}
+                <BarChart data={categoryData} layout="vertical" margin={{ left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                  <XAxis
+                    type="number"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#64748b', fontSize: 10 }}
+                    tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR')}`}
                   />
-                  <Legend verticalAlign="bottom" height={36} />
-                </PieChart>
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#64748b', fontSize: 11 }}
+                    width={100}
+                  />
+                  <Tooltip
+                    cursor={{ fill: '#f8fafc' }}
+                    contentStyle={{ borderRadius: '12px', border: 'none' }}
+                    formatter={(value: number) => [formatCurrency(value), 'Gasto Total']}
+                  />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                    {categoryData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index]} />
+                    ))}
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             ) : (
               <div className="h-full flex items-center justify-center text-gray-400 italic">Sem despesas registradas</div>
@@ -335,7 +449,33 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
           </div>
         </div>
 
-        <div className="bg-blue-900 rounded-2xl shadow-lg p-6 text-white overflow-hidden relative flex flex-col h-[400px] no-print">
+        {/* NOVO Gráfico 4: Compar ação Mensal */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[400px]">
+          <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <span className="w-2 h-6 bg-purple-500 rounded-full"></span>
+            Comparação: Mês Atual vs Anterior
+          </h3>
+          <div className="flex-1 min-h-0">
+            {comparisonData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={comparisonData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR')}`} />
+                  <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} formatter={(value: number) => [formatCurrency(value), '']} />
+                  <Legend iconType="circle" />
+                  <Bar dataKey="receitas" name="Receitas" fill="#10B981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="despesas" name="Despesas" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-400">Sem dados</div>
+            )}
+          </div>
+        </div>
+
+        {/* Conselheiro IA Gemini */}
+        <div className="bg-blue-900 rounded-2xl shadow-lg p-6 text-white overflow-hidden relative flex flex-col h-[400px] no-print lg:col-span-2">
           <div className="relative z-10 h-full flex flex-col">
             <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
               Conselheiro IA Gemini
@@ -356,6 +496,50 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
               )}
             </div>
             <button onClick={generateAIInsights} disabled={loadingInsights || transactions.length === 0} className="w-full bg-white text-blue-900 py-3.5 rounded-xl font-bold hover:bg-blue-50 disabled:opacity-50 transition-all shadow-xl active:scale-[0.98] no-print">Gerar Insights</button>
+          </div>
+        </div>
+      </div>
+
+      {/* NOVA Seção: Top Transações */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <h3 className="font-bold text-lg text-gray-900 mb-6">Top 5 Maiores Transações</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Maiores Receitas */}
+          <div>
+            <h4 className="font-semibold text-green-700 mb-4 flex items-center gap-2">
+              <span className="w-2 h-4 bg-green-500 rounded-full"></span>
+              Maiores Receitas
+            </h4>
+            <div className="space-y-3">
+              {topTransactionsData.receitas.length > 0 ? topTransactionsData.receitas.map((t, i) => (
+                <div key={t.id} className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 text-sm truncate">{t.historico}</div>
+                    <div className="text-xs text-gray-500">{t.dependenciaOrigem} • {t.data}</div>
+                  </div>
+                  <div className="font-bold text-green-600 text-sm">{formatCurrency(t.valor)}</div>
+                </div>
+              )) : <p className="text-gray-400 text-sm italic text-center py-8">Nenhuma receita registrada</p>}
+            </div>
+          </div>
+
+          {/* Maiores Despesas */}
+          <div>
+            <h4 className="font-semibold text-red-700 mb-4 flex items-center gap-2">
+              <span className="w-2 h-4 bg-red-500 rounded-full"></span>
+              Maiores Despesas
+            </h4>
+            <div className="space-y-3">
+              {topTransactionsData.despesas.length > 0 ? topTransactionsData.despesas.map((t, i) => (
+                <div key={t.id} className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-100">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 text-sm truncate">{t.historico}</div>
+                    <div className="text-xs text-gray-500">{t.dependenciaOrigem} • {t.data}</div>
+                  </div>
+                  <div className="font-bold text-red-600 text-sm">{formatCurrency(t.valor)}</div>
+                </div>
+              )) : <p className="text-gray-400 text-sm italic text-center py-8">Nenhuma despesa registrada</p>}
+            </div>
           </div>
         </div>
       </div>

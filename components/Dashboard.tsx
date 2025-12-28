@@ -1,23 +1,29 @@
 
+// Importações necessárias para o componente Dashboard
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Transaction, FinanceSummary } from '../types';
 import { TransactionDialog } from './TransactionDialog';
 import { apiService } from '../services/api';
 
+// Interface que define as propriedades do componente Dashboard
 interface DashboardProps {
-  user: User;
+  user: User; // Usuário logado
 }
 
+// Componente principal do Dashboard - exibe visão geral financeira
 export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
+  // Estado para armazenar todas as transações do usuário
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // Controla abertura/fechamento do diálogo de nova transação
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  // Armazena resumo financeiro (saldo total, receitas e despesas do mês)
   const [summary, setSummary] = useState<FinanceSummary>({
     saldoTotal: 0,
     receitasMes: 0,
     despesasMes: 0
   });
 
-  // Filter States
+  // Estados para controle de filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -25,13 +31,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [maxValue, setMaxValue] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
-  // Load transactions from API
+  // Efeito que carrega transações da API quando o componente é montado
   useEffect(() => {
     const loadTransactions = async () => {
       try {
+        // Busca todas as transações do usuário
         const data = await apiService.getTransactions(user.id);
         if (Array.isArray(data)) {
           setTransactions(data);
+          // Calcula resumo financeiro com os dados carregados
           calculateSummary(data);
         }
       } catch (err) {
@@ -39,35 +47,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       }
     };
     loadTransactions();
-  }, [user.id]);
+  }, [user.id]); // Recarrega quando o ID do usuário muda
 
+  // Função que calcula o resumo financeiro (saldo total, receitas e despesas do mês)
   const calculateSummary = (data: Transaction[]) => {
-    // Round to 2 decimals to avoid floating point issues
+    // Arredonda para 2 casas decimais para evitar problemas de ponto flutuante
     const total = Math.round(data.reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
 
+    // Obtém mês e ano atuais
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
     const currentMonthStr = `${currentYear}-${currentMonth}`;
 
+    // Filtra apenas transações do mês atual
     const monthData = data.filter(t => {
       if (!t.data) return false;
-      // Compare YYYY-MM directly to avoid timezone shifts
+      // Compara YYYY-MM diretamente para evitar problemas de fuso horário
       return t.data.startsWith(currentMonthStr);
     });
 
+    // Calcula total de receitas (valores positivos) do mês
     const receitas = Math.round(monthData
       .filter(t => t.valor > 0)
       .reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
 
+    // Calcula total de despesas (valores negativos) do mês
     const despesas = Math.round(monthData
       .filter(t => t.valor < 0)
       .reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
 
+    // Atualiza estado do resumo financeiro
     setSummary({
       saldoTotal: total,
       receitasMes: receitas,
-      despesasMes: Math.abs(despesas)
+      despesasMes: Math.abs(despesas) // Converte para valor positivo para exibição
     });
   };
 
@@ -221,18 +235,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             <span className="text-gray-300">|</span>
             <button
               onClick={handleDeleteAll}
-              className="text-xs text-red-600 hover:text-red-800 font-medium transition-colors"
+              className="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors border border-red-200"
             >
               Apagar Tudo
             </button>
           </div>
           <button
             onClick={() => setIsDialogOpen(true)}
-            className="flex-1 sm:flex-none bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors shadow-sm active:scale-95 flex items-center justify-center gap-2"
+            className="flex-1 sm:flex-none bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors shadow-sm active:scale-95"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
             Nova Transação
           </button>
         </div>

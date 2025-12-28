@@ -124,7 +124,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
               <div key={d} className="bg-gray-50 p-2 text-center text-[10px] font-bold text-gray-400 uppercase">{d}</div>
             ))}
             {Array.from({ length: startDay }).map((_, i) => (
-              <div key={`empty-${i}`} className="bg-white p-2 h-20 sm:h-24"></div>
+              <div key={`empty-${i}`} className="bg-white p-2 h-24 sm:h-28"></div>
             ))}
             {Array.from({ length: daysInMonth(currentDate.getMonth(), currentDate.getFullYear()) }).map((_, i) => {
               const day = i + 1;
@@ -132,16 +132,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
               const isToday = day === new Date().getDate() && currentDate.getMonth() === new Date().getMonth() && currentDate.getFullYear() === new Date().getFullYear();
 
               return (
-                <div key={day} className={`bg-white p-1 h-20 sm:h-24 border-t border-gray-50 flex flex-col gap-0.5 overflow-hidden group hover:bg-blue-50/30 transition-colors ${isToday ? 'bg-blue-50/50' : ''}`}>
+                <div key={day} className={`bg-white p-1.5 h-24 sm:h-28 border-t border-gray-50 flex flex-col gap-1 overflow-hidden group hover:bg-blue-50/30 transition-colors ${isToday ? 'bg-blue-50/50' : ''}`}>
                   <span className={`text-[10px] font-bold ${isToday ? 'bg-blue-600 text-white w-5 h-5 flex items-center justify-center rounded-full' : 'text-gray-400'}`}>{day}</span>
-                  <div className="flex flex-col gap-0.5 mt-1">
+                  <div className="flex flex-col gap-0.5 mt-0.5">
                     {dRec.map(r => (
-                      <div key={r.id} className="text-[8px] bg-amber-100 text-amber-700 px-1 rounded truncate border border-amber-200" title={r.titulo}>
+                      <div key={r.id} className="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded truncate border border-amber-200" title={r.titulo}>
                         {r.titulo}
                       </div>
                     ))}
                     {dTrans.map(t => (
-                      <div key={t.id} className={`text-[8px] px-1 rounded truncate border ${t.valor > 0 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                      <div key={t.id} className={`text-[9px] px-1 py-0.5 rounded truncate border ${t.valor > 0 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
                         {Math.abs(t.valor).toLocaleString('pt-BR')}
                       </div>
                     ))}

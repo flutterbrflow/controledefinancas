@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Goal, Transaction } from '../types';
 import { apiService } from '../services/api';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface GoalsProps {
   user: User;
@@ -90,28 +90,24 @@ export const Goals: React.FC<GoalsProps> = ({ user }) => {
     }
     setLoadingAi(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
 
       const context = {
         metas: goals.map(g => ({ titulo: g.titulo, alvo: g.valorMeta, atual: g.valorAtual })),
-        resumoFinanceiro: {
-          totalTransacoes: transactions.length,
-          saldoEstimado: transactions.reduce((acc, t) => acc + t.valor, 0)
-        }
+        saldoEstimado: transactions.reduce((acc, t) => acc + t.valor, 0)
       };
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Analise minhas metas financeiras e sugira um plano de ação: ${JSON.stringify(context)}. Forneça 3 passos realistas para alcançar as metas mais rápido.`,
-        config: {
-          systemInstruction: "Você é um Mentor de Liberdade Financeira. Seja motivador, direto e prático. Use português do Brasil.",
-        }
-      });
+      const prompt = `Analise minhas metas financeiras e sugira um plano de ação:\n\n${JSON.stringify(context, null, 2)}\n\nForneça 3 passos realistas.`;
 
-      setAiAdvice(response.text || 'Não consegui gerar um plano agora.');
-    } catch (err) {
-      console.error(err);
-      setAiAdvice('Erro ao consultar a IA. Verifique sua conexão.');
+
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      const result = await model.generateContent(prompt);
+      const response = result.response;
+
+      setAiAdvice(response.text() || 'Não consegui gerar um plano agora.');
+    } catch (error: any) {
+      console.error(error);
+      setAiAdvice(`Erro: ${error.message || 'Verifique sua conexão'}.`);
     } finally {
       setLoadingAi(false);
     }
