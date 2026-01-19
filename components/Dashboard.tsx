@@ -85,9 +85,63 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     });
   };
 
+  // Função auxiliar para criar chave única de transação (para detecção de duplicatas)
+  const createTransactionKey = (t: Transaction | Partial<Transaction>) => {
+    const data = t.data || '';
+    const historico = (t.historico || '').toLowerCase().trim();
+    const valor = Math.round((t.valor || 0) * 100); // Arredonda para evitar problemas de ponto flutuante
+    return `${data}|${historico}|${valor}`;
+  };
+
   const handleImport = async (newTransactions: Transaction[]) => {
     try {
-      await apiService.addTransaction(user.id, newTransactions);
+      // Verificar duplicatas comparando com transações existentes
+      const existingKeys = new Set(transactions.map(createTransactionKey));
+
+      const duplicates: Transaction[] = [];
+      const uniqueTransactions: Transaction[] = [];
+
+      for (const t of newTransactions) {
+        const key = createTransactionKey(t);
+        if (existingKeys.has(key)) {
+          duplicates.push(t);
+        } else {
+          uniqueTransactions.push(t);
+          existingKeys.add(key); // Evita duplicatas dentro do próprio CSV
+        }
+      }
+
+      // Se houver duplicatas, perguntar ao usuário
+      if (duplicates.length > 0) {
+        const totalNovas = uniqueTransactions.length;
+        const totalDuplicadas = duplicates.length;
+
+        const mensagem = `⚠️ Foram encontradas ${totalDuplicadas} transação(ões) duplicada(s) no arquivo.\n\n` +
+          `📊 Resumo:\n` +
+          `• ${totalNovas} transação(ões) nova(s)\n` +
+          `• ${totalDuplicadas} duplicata(s) detectada(s)\n\n` +
+          `Deseja importar:\n` +
+          `[OK] - Apenas as ${totalNovas} transações novas\n` +
+          `[Cancelar] - Cancelar toda a importação`;
+
+        if (!window.confirm(mensagem)) {
+          return; // Usuário cancelou
+        }
+
+        // Se não houver transações novas após remover duplicatas
+        if (uniqueTransactions.length === 0) {
+          alert('ℹ️ Todas as transações do arquivo já existem no sistema. Nenhuma importação realizada.');
+          setIsDialogOpen(false);
+          return;
+        }
+
+        // Importar apenas as transações únicas
+        await apiService.addTransaction(user.id, uniqueTransactions);
+        alert(`✅ Importação concluída!\n\n• ${uniqueTransactions.length} transação(ões) importada(s)\n• ${duplicates.length} duplicata(s) ignorada(s)`);
+      } else {
+        // Sem duplicatas, importar tudo
+        await apiService.addTransaction(user.id, newTransactions);
+      }
 
       const updatedData = await apiService.getTransactions(user.id);
       setTransactions(updatedData);

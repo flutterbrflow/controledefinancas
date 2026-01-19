@@ -1,11 +1,41 @@
 <?php
-// Exemplo de configuração - Renomeie para config.php e preencha seus dados
-define('DB_HOST', '127.0.0.1');
-define('DB_NAME', 'controle_financas');
-define('DB_USER', 'seu_usuario');
-define('DB_PASS', 'sua_senha');
+/**
+ * Configuração do Banco de Dados - Controle de Finanças
+ * 
+ * INSTRUÇÕES:
+ * 1. Copie este arquivo para 'config.php'
+ * 2. Preencha as credenciais do seu banco de dados
+ * 
+ * QNAP NAS:
+ * - Use IP ao invés de 'localhost' (ex: 127.0.0.1:3307)
+ * - A porta padrão do MySQL no QNAP é 3307
+ * - 'localhost' tenta usar socket Unix e causa erro "No such file or directory"
+ * 
+ * DESENVOLVIMENTO LOCAL:
+ * - Use 'localhost' ou '127.0.0.1'
+ * - Porta padrão: 3306
+ */
 
-// Configurações de CORS
+// ============================================
+// CONFIGURAÇÃO DO BANCO DE DADOS
+// ============================================
+
+// Para QNAP NAS: use '127.0.0.1:3307'
+// Para local: use 'localhost' ou '127.0.0.1'
+define('DB_HOST', '127.0.0.1:3307');
+
+// Nome do banco de dados
+define('DB_NAME', 'controle_financas');
+
+// Usuário do MySQL
+define('DB_USER', 'root');
+
+// Senha do MySQL
+define('DB_PASS', 'SUA_SENHA_AQUI');
+
+// ============================================
+// CONFIGURAÇÕES DE CORS (não alterar)
+// ============================================
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
