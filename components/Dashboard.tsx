@@ -31,6 +31,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [maxValue, setMaxValue] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
+  // Estados para seletor de período (timeline)
+  const currentDate = new Date();
+  const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth()); // 0-11
+
+  // Constantes para o seletor de período
+  const START_YEAR = 2025;
+  const END_YEAR = currentDate.getFullYear();
+  const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+  // Efeito para ajustar o mês selecionado quando o ano mudar
+  useEffect(() => {
+    const isCurrentYear = selectedYear === currentDate.getFullYear();
+    const maxMonth = isCurrentYear ? currentDate.getMonth() : 11;
+
+    // Se o mês selecionado estiver além do máximo disponível, ajustar
+    if (selectedMonth > maxMonth) {
+      setSelectedMonth(maxMonth);
+    }
+  }, [selectedYear]);
+
   // Efeito que carrega transações da API quando o componente é montado
   useEffect(() => {
     const loadTransactions = async () => {
@@ -152,9 +173,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   };
 
-  // Filter Logic
+  // Filter Logic - inclui filtro por período selecionado
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
+      // Filtro por período selecionado (ano/mês)
+      const selectedMonthStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+      const matchesPeriod = t.data?.startsWith(selectedMonthStr);
+      if (!matchesPeriod) return false;
+
       // Search Term Match (History or Origin)
       const matchesSearch = t.historico.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.dependenciaOrigem.toLowerCase().includes(searchTerm.toLowerCase());
@@ -171,7 +197,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       return matchesSearch && matchesDateFrom && matchesDateTo && matchesMinVal && matchesMaxVal;
     });
-  }, [transactions, searchTerm, dateFrom, dateTo, minValue, maxValue]);
+  }, [transactions, searchTerm, dateFrom, dateTo, minValue, maxValue, selectedYear, selectedMonth]);
 
   const generateSampleData = async () => {
     const now = new Date();
@@ -337,6 +363,98 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             </svg>
             Saídas deste mês
           </div>
+        </div>
+      </div>
+
+      {/* Seletor de Período - Timeline de Anos e Meses */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        {/* Timeline de Anos */}
+        <div className="px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            {Array.from({ length: END_YEAR - START_YEAR + 1 }, (_, i) => START_YEAR + i).map((year, index, arr) => (
+              <button
+                key={year}
+                onClick={() => setSelectedYear(year)}
+                className={`flex flex-col items-center group relative ${index < arr.length - 1 ? 'flex-1' : ''}`}
+              >
+                <span className={`text-sm font-semibold transition-colors ${selectedYear === year ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`}>
+                  {year}
+                </span>
+                <div className="flex items-center w-full mt-2">
+                  <div className={`w-3 h-3 rounded-full border-2 transition-all z-10 ${selectedYear === year ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300 group-hover:border-blue-400'}`} />
+                  {index < arr.length - 1 && (
+                    <div className="flex-1 h-0.5 bg-gray-200" />
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Barra de Meses */}
+        <div className="flex items-center bg-gray-50">
+          <button
+            onClick={() => {
+              if (selectedMonth === 0) {
+                if (selectedYear > START_YEAR) {
+                  setSelectedYear(selectedYear - 1);
+                  setSelectedMonth(11);
+                }
+              } else {
+                setSelectedMonth(selectedMonth - 1);
+              }
+            }}
+            disabled={selectedYear === START_YEAR && selectedMonth === 0}
+            className="px-3 py-4 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          <div className="flex-1 flex">
+            {MONTHS.map((month, index) => {
+              // Para o ano atual, mostrar apenas meses até o mês atual
+              // Para anos anteriores, mostrar todos os meses
+              const isCurrentYear = selectedYear === currentDate.getFullYear();
+              const maxMonthIndex = isCurrentYear ? currentDate.getMonth() : 11;
+
+              if (index > maxMonthIndex) return null;
+
+              return (
+                <button
+                  key={month}
+                  onClick={() => setSelectedMonth(index)}
+                  className={`flex-1 py-3 text-xs font-medium transition-all border-b-2 ${selectedMonth === index
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'text-gray-500 hover:bg-gray-100 border-transparent'
+                    }`}
+                >
+                  {month}/{String(selectedYear).slice(2)}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => {
+              const isCurrentYear = selectedYear === currentDate.getFullYear();
+              const maxMonth = isCurrentYear ? currentDate.getMonth() : 11;
+
+              if (selectedMonth < maxMonth) {
+                setSelectedMonth(selectedMonth + 1);
+              } else if (selectedYear < END_YEAR) {
+                setSelectedYear(selectedYear + 1);
+                setSelectedMonth(0);
+              }
+            }}
+            disabled={selectedYear === END_YEAR && selectedMonth === currentDate.getMonth()}
+            className="px-3 py-4 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
         </div>
       </div>
 
