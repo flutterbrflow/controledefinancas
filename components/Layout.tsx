@@ -18,9 +18,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, curren
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-2 cursor-pointer" onClick={() => onViewChange('dashboard')}>
-              <div className="w-8 h-8 bg-blue-900 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xs">CF</span>
-              </div>
+              <img src="./logo.png" alt="Logo" className="w-10 h-10 rounded-lg shadow-sm" />
               <h1 className="font-bold text-xl sm:text-2xl text-gray-900 truncate">
                 Controle de Finanças
               </h1>

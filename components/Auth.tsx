@@ -54,9 +54,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-800 rounded-full -ml-48 -mb-48 opacity-30"></div>
 
         <div className="z-10">
-          <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center mb-8 shadow-xl">
-            <span className="text-blue-900 font-bold text-xl">CF</span>
-          </div>
+          <img src="./logo.png" alt="Logo Controle de Finanças" className="w-16 h-16 rounded-xl shadow-xl mb-8" />
           <h1 className="text-5xl font-bold leading-tight mb-4">Gerencie seu dinheiro com facilidade.</h1>
           <p className="text-blue-100 text-lg max-w-md">Controle de Finanças é a ferramenta completa para organizar suas transações e planejar seu futuro financeiro.</p>
         </div>
@@ -77,9 +75,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       <div className="flex-1 flex items-center justify-center p-8 sm:p-12">
         <div className="max-w-md w-full">
           <div className="lg:hidden flex justify-center mb-8">
-            <div className="w-10 h-10 bg-blue-900 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold">CF</span>
-            </div>
+            <img src="./logo.png" alt="Logo" className="w-14 h-14 rounded-lg shadow-md" />
           </div>
 
           <h2 className="text-3xl font-bold text-gray-900 mb-2">
