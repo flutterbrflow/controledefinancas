@@ -55,8 +55,8 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
         months[key] = { month: label, receita: 0, despesa: 0 };
       }
 
-      // Agrupa transações por mês
-      transactions.forEach(t => {
+      // Agrupa transações por mês (apenas conta corrente, exclui cartão de crédito)
+      transactions.filter(t => !t.isCreditCard).forEach(t => {
         if (!t.data) return;
         const parts = t.data.split('-');
         if (parts.length < 2) return;
@@ -79,8 +79,8 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
     try {
       const totals: Record<string, number> = {};
 
-      // Soma despesas por origem
-      transactions.filter(t => t.valor < 0).forEach(t => {
+      // Soma despesas por origem (apenas conta corrente, exclui cartão de crédito)
+      transactions.filter(t => t.valor < 0 && !t.isCreditCard).forEach(t => {
         const cat = t.dependenciaOrigem || 'Outros';
         totals[cat] = (totals[cat] || 0) + Math.abs(t.valor);
       });
@@ -108,8 +108,8 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
       let runningBalance = 0;
       const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-      // Calcula saldo inicial (transações de meses anteriores)
-      transactions.forEach(t => {
+      // Calcula saldo inicial (transações de meses anteriores, apenas conta corrente)
+      transactions.filter(t => !t.isCreditCard).forEach(t => {
         if (!t.data) return;
         const parts = t.data.split('-');
         if (parts.length < 2) return;
@@ -129,7 +129,7 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
         const dayStr = String(day).padStart(2, '0');
         const currentDateStr = `${currentMonthStr}-${dayStr}`;
         const dayTotal = transactions
-          .filter(t => t.data === currentDateStr)
+          .filter(t => t.data === currentDateStr && !t.isCreditCard)
           .reduce((acc, curr) => acc + curr.valor, 0);
 
         runningBalance += dayTotal;
@@ -145,7 +145,7 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
         const dayStr = String(day).padStart(2, '0');
         const currentDateStr = `${currentMonthStr}-${dayStr}`;
         const dayTotal = transactions
-          .filter(t => t.data === currentDateStr)
+          .filter(t => t.data === currentDateStr && !t.isCreditCard)
           .reduce((acc, curr) => acc + curr.valor, 0);
         futureTrans += dayTotal;
       }
@@ -167,10 +167,14 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
     try {
       const now = new Date();
       const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const lastMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, '0')}`;
+
+      // Calcula mês anterior corretamente (se janeiro, volta para dezembro do ano anterior)
+      const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
       const calculate = (monthStr: string) => {
-        const monthTrans = transactions.filter(t => t.data?.startsWith(monthStr));
+        // Filtra apenas transações da conta corrente (exclui cartão de crédito)
+        const monthTrans = transactions.filter(t => t.data?.startsWith(monthStr) && !t.isCreditCard);
         return {
           receitas: monthTrans.filter(t => t.valor > 0).reduce((acc, t) => acc + t.valor, 0),
           despesas: Math.abs(monthTrans.filter(t => t.valor < 0).reduce((acc, t) => acc + t.valor, 0))
@@ -192,12 +196,15 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
   // NOVO GRÁFICO: Top 5 Maiores Receitas e Despesas
   const topTransactionsData = useMemo(() => {
     try {
-      const receitas = transactions
+      // Filtra apenas transações da conta corrente (exclui cartão de crédito)
+      const accountTransactions = transactions.filter(t => !t.isCreditCard);
+
+      const receitas = accountTransactions
         .filter(t => t.valor > 0)
         .sort((a, b) => b.valor - a.valor)
         .slice(0, 5);
 
-      const despesas = transactions
+      const despesas = accountTransactions
         .filter(t => t.valor < 0)
         .map(t => ({ ...t, valor: Math.abs(t.valor) }))
         .sort((a, b) => b.valor - a.valor)
@@ -206,6 +213,51 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
       return { receitas, despesas };
     } catch (e) {
       return { receitas: [], despesas: [] };
+    }
+  }, [transactions]);
+
+  // NOVO GRÁFICO: Dados do Cartão de Crédito (Faturado vs Parcelas Restantes)
+  const creditCardData = useMemo(() => {
+    try {
+      const creditTransactions = transactions.filter(t => t.isCreditCard);
+
+      // Total faturado (gastos já lançados no cartão)
+      const totalFaturado = Math.abs(creditTransactions.reduce((acc, t) => acc + t.valor, 0));
+
+      // Total de parcelas restantes
+      let totalParcelasRestantes = 0;
+      creditTransactions.forEach(t => {
+        if (t.parcelaAtual && t.totalParcelas && t.totalParcelas > t.parcelaAtual) {
+          const parcelasRestantes = t.totalParcelas - t.parcelaAtual;
+          totalParcelasRestantes += Math.abs(t.valor) * parcelasRestantes;
+        }
+      });
+
+      // Total geral
+      const totalGeral = totalFaturado + totalParcelasRestantes;
+
+      // Top 5 categorias de gastos do cartão
+      const categorias: Record<string, number> = {};
+      creditTransactions.filter(t => t.valor < 0).forEach(t => {
+        const cat = t.dependenciaOrigem || 'Outros';
+        categorias[cat] = (categorias[cat] || 0) + Math.abs(t.valor);
+      });
+
+      const topCategorias = Object.entries(categorias)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, value]) => ({ name, value }));
+
+      return {
+        resumo: [
+          { name: 'Faturado', value: Math.round(totalFaturado * 100) / 100 },
+          { name: 'Parcelas Futuras', value: Math.round(totalParcelasRestantes * 100) / 100 }
+        ],
+        totalGeral: Math.round(totalGeral * 100) / 100,
+        topCategorias
+      };
+    } catch (e) {
+      return { resumo: [], totalGeral: 0, topCategorias: [] };
     }
   }, [transactions]);
 
@@ -299,29 +351,6 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
   // Renderização principal do componente
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12 print:p-0">
-      {/* CSS customizado para impressão */}
-      <style dangerouslySetInnerHTML={{
-        __html: `
-        @media print {
-          body { background: white !important; padding: 0 !important; margin: 0 !important; }
-          .no-print, header, nav, footer, button { display: none !important; }
-          main { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
-          .grid { display: block !important; }
-          .bg-white { border: none !important; box-shadow: none !important; }
-          .rounded-2xl { border-radius: 0 !important; }
-          .h-\\[400px\\] { height: auto !important; min-height: 350px; page-break-inside: avoid; margin-bottom: 2rem; }
-          .print-title { display: block !important; margin-bottom: 2rem; border-bottom: 2px solid #1E3A8A; padding-bottom: 1rem; }
-          .recharts-responsive-container { page-break-inside: avoid; }
-        }
-        .print-title { display: none; }
-      `}} />
-
-      {/* Título para impressão */}
-      <div className="print-title">
-        <h1 className="text-3xl font-bold text-blue-900">Relatório Consolidado de Finanças</h1>
-        <p className="text-gray-500">Usuário: {user.name} | Data do Relatório: {new Date().toLocaleDateString('pt-BR')}</p>
-      </div>
-
       {/* Cabeçalho com ações */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 no-print">
         <div>
@@ -471,6 +500,76 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
             ) : (
               <div className="h-full flex items-center justify-center text-gray-400">Sem dados</div>
             )}
+          </div>
+        </div>
+
+        {/* Seção de Análise do Cartão de Crédito */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2">
+          <h3 className="font-bold text-lg text-gray-900 mb-6 flex items-center gap-2">
+            <span className="w-2 h-6 bg-red-500 rounded-full"></span>
+            Análise do Cartão de Crédito
+          </h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Resumo: Faturado vs Parcelas Futuras */}
+            <div>
+              <h4 className="font-semibold text-gray-700 mb-4">Composição da Dívida</h4>
+              <div className="h-[200px]">
+                {creditCardData.resumo.length > 0 && (creditCardData.resumo[0].value > 0 || creditCardData.resumo[1].value > 0) ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={creditCardData.resumo} layout="vertical" margin={{ left: 20, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                      <XAxis
+                        type="number"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: '#64748b', fontSize: 10 }}
+                        tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR')}`}
+                        domain={[0, 'dataMax']}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: '#64748b', fontSize: 11 }}
+                        width={110}
+                      />
+                      <Tooltip
+                        cursor={{ fill: '#f8fafc' }}
+                        contentStyle={{ borderRadius: '12px', border: 'none' }}
+                        formatter={(value: number) => [formatCurrency(value), 'Total']}
+                      />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                        <Cell fill="#EF4444" />
+                        <Cell fill="#F97316" />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-gray-400 italic">Sem dados de cartão de crédito</div>
+                )}
+              </div>
+              <div className="mt-4 p-4 bg-red-50 rounded-xl border border-red-100 text-center">
+                <p className="text-sm text-gray-500">Total Geral do Cartão</p>
+                <p className="text-2xl font-bold text-red-600">{formatCurrency(creditCardData.totalGeral)}</p>
+              </div>
+            </div>
+
+            {/* Top Categorias do Cartão */}
+            <div>
+              <h4 className="font-semibold text-gray-700 mb-4">Top Categorias de Gastos (Cartão)</h4>
+              <div className="space-y-3">
+                {creditCardData.topCategorias.length > 0 ? creditCardData.topCategorias.map((cat, i) => (
+                  <div key={cat.name} className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-100">
+                    <div className="flex items-center gap-3">
+                      <span className="w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs font-bold">{i + 1}</span>
+                      <span className="font-medium text-gray-900 text-sm">{cat.name}</span>
+                    </div>
+                    <div className="font-bold text-red-600 text-sm">{formatCurrency(cat.value)}</div>
+                  </div>
+                )) : <p className="text-gray-400 text-sm italic text-center py-8">Nenhum gasto de cartão registrado</p>}
+              </div>
+            </div>
           </div>
         </div>
 

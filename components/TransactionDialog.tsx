@@ -10,7 +10,7 @@ interface TransactionDialogProps {
   userId: string;
 }
 
-type Tab = 'manual' | 'csv' | 'ocr';
+type Tab = 'manual' | 'csv' | 'ocr' | 'invoice';
 
 export const TransactionDialog: React.FC<TransactionDialogProps> = ({
   isOpen,
@@ -26,12 +26,16 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ocrInputRef = useRef<HTMLInputElement>(null);
 
+  // Estado para importação de fatura (texto)
+  const [invoiceText, setInvoiceText] = useState('');
+  const [invoiceYear, setInvoiceYear] = useState(new Date().getFullYear());
+
   const generateId = () => {
     // Verifica se crypto e randomUUID existem (apenas disponíveis em HTTPS ou localhost)
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
       return crypto.randomUUID();
     }
-    // Fallback para ambientes HTTP/NAS
+    // Fallback para ambientes HTTP/NAS (gera ID aleatório simples)
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   };
 
@@ -40,7 +44,11 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
     data: new Date().toISOString().split('T')[0],
     historico: '',
     origem: '',
-    valor: ''
+    valor: '',
+    isCreditCard: false,
+    isSavings: false,
+    parcelaAtual: '',
+    totalParcelas: ''
   });
 
   if (!isOpen) return null;
@@ -127,7 +135,8 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
         data: data.date || new Date().toISOString().split('T')[0],
         historico: data.description || data.merchant || 'Compra Digitalizada',
         origem: data.merchant || 'OCR',
-        valor: data.value ? String(data.value) : ''
+        valor: data.value ? String(data.value) : '',
+        isCreditCard: false
       });
       setActiveTab('manual');
       setToast({ message: "✅ Dados extraídos com sucesso!", type: 'success' });
@@ -215,7 +224,12 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
       historico: manualData.historico,
       dataBalancete: manualData.data,
       numeroDocumento: null,
+
       valor: valor,
+      isCreditCard: manualData.isCreditCard,
+      isSavings: manualData.isSavings,
+      parcelaAtual: manualData.isCreditCard && manualData.parcelaAtual ? parseInt(manualData.parcelaAtual) : undefined,
+      totalParcelas: manualData.isCreditCard && manualData.totalParcelas ? parseInt(manualData.totalParcelas) : undefined,
       createdAt: new Date().toISOString()
     };
 
@@ -226,7 +240,11 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
         data: new Date().toISOString().split('T')[0],
         historico: '',
         origem: '',
-        valor: ''
+        valor: '',
+        isCreditCard: false,
+        isSavings: false,
+        parcelaAtual: '',
+        totalParcelas: ''
       });
       setOcrImage(null);
       setToast(null);
@@ -385,6 +403,21 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
 
         const sanitize = (str: string) => str.replace(/[^\x20-\x7E\s\u00C0-\u00FF]/g, '');
 
+        // Detecta transações de poupança automaticamente
+        const histUpper = histStr.toUpperCase();
+        const isSavings = histUpper.includes('POUPAN') ||
+          histUpper.includes('APL.POUP') ||
+          histUpper.includes('RES.POUP') ||
+          histUpper.includes('APLICACAO POUP') ||
+          histUpper.includes('APLICAÇÃO POUP') ||
+          histUpper.includes('RESGATE POUP') ||
+          histUpper.includes('TRANSFERIDO DA POUPAN') ||
+          histUpper.includes('TRANSFERIDO POUPAN') ||
+          histUpper.includes('TRANSFERENCIA DE CREDITO') ||
+          histUpper.includes('TRANSFERÊNCIA DE CRÉDITO') ||
+          histUpper.includes('TRANSFERENCIA PARA CONTA') ||
+          histUpper.includes('TRANSFERÊNCIA PARA CONTA');
+
         newTransactions.push({
           id: generateId(),
           userId: userId,
@@ -394,6 +427,7 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
           dataBalancete: normalizeDate(dataStr),
           numeroDocumento: null,
           valor: valor,
+          isSavings: isSavings,
           createdAt: new Date().toISOString()
         });
       }
@@ -408,6 +442,102 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
     } catch (err: any) {
       setToast({ message: `❌ ${err.message}`, type: 'error' });
       setTimeout(() => setToast(null), 3000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processInvoiceText = () => {
+    if (!invoiceText.trim()) return;
+    setLoading(true);
+
+    try {
+      const lines = invoiceText.split('\n');
+      const newTransactions: Transaction[] = [];
+
+      lines.forEach(line => {
+        const cleanLine = line.trim();
+        if (!cleanLine) return;
+
+        // Regex para capturar: Data (DD/MM), Descrição (meio), Valor (penúltimo), Valor US$ (último)
+        // Ex: 09/01 MLP*Magalu Ka PARC 01/10 VIANA BR 649,24 0,00
+
+        const dateMatch = cleanLine.match(/^(\d{2}\/\d{2})/);
+        if (!dateMatch) return; // Pula linhas sem data
+
+        // Encontra os dois últimos números (formato 0,00 ou 0.00)
+        const valueMatches = cleanLine.match(/(-?[\d\.]+,?\d{2})/g);
+
+        if (!valueMatches || valueMatches.length < 2) return;
+
+        // O penúltimo é o valor em R$, o último é US$
+        const valorStr = valueMatches[valueMatches.length - 2];
+        const valor = normalizeNumericValue(valorStr);
+
+        if (valor === 0) return;
+
+        const dateStr = dateMatch[0]; // 09/01
+
+        // Isola a descrição removendo data e valores
+        let description = cleanLine.substring(dateStr.length).trim();
+        const lastValueIndex = description.lastIndexOf(valorStr);
+        if (lastValueIndex !== -1) {
+          description = description.substring(0, lastValueIndex).trim();
+        }
+
+        // Tenta detectar parcelamento: "PARC 01/10"
+        let parcelaAtual = undefined;
+        let totalParcelas = undefined;
+
+        const parcMatch = description.match(/PARC\s*(\d+)\/(\d+)/i);
+        if (parcMatch) {
+          parcelaAtual = parseInt(parcMatch[1]);
+          totalParcelas = parseInt(parcMatch[2]);
+        }
+
+        // Reconstrói a data completa (AAAA-MM-DD)
+        const [day, month] = dateStr.split('/');
+        const fullDate = `${invoiceYear}-${month}-${day}`;
+
+        // Ajuste de sinal: Compras (sem sinal) viram negativo (despesa)
+        let finalValor = -Math.abs(valor);
+        if (valorStr.includes('-')) {
+          finalValor = Math.abs(valor); // Crédito/Estorno
+        }
+
+        if (description.toUpperCase().includes('SUBTOTAL') || description.toUpperCase().includes('TOTAL')) return;
+
+        newTransactions.push({
+          id: generateId(),
+          userId: userId,
+          data: fullDate,
+          dependenciaOrigem: 'Fatura Cartão',
+          historico: description,
+          dataBalancete: fullDate,
+          numeroDocumento: null,
+          valor: finalValor,
+          createdAt: new Date().toISOString(),
+          parcelaAtual,
+          totalParcelas,
+          isCreditCard: true
+        });
+      });
+
+      if (newTransactions.length > 0) {
+        setToast({ message: `✅ ${newTransactions.length} transações importadas!`, type: 'success' });
+        setTimeout(() => {
+          onImport(newTransactions);
+          setInvoiceText('');
+          setToast(null);
+          // setActiveTab('manual'); // Opcional: voltar para manual ou manter na fatura para mais imports
+        }, 1500);
+      } else {
+        setToast({ message: "⚠️ Nenhuma transação válida encontrada.", type: 'error' });
+      }
+
+    } catch (e: any) {
+      console.error(e);
+      setToast({ message: "❌ Erro ao processar texto.", type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -436,6 +566,7 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
 
           <div className="flex bg-gray-100 p-1 rounded-lg mt-6">
             <button onClick={() => setActiveTab('manual')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'manual' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>Manual</button>
+            <button onClick={() => setActiveTab('invoice')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'invoice' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>Fatura Cartão</button>
             <button onClick={() => setActiveTab('ocr')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'ocr' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>Foto / OCR</button>
             <button onClick={() => setActiveTab('csv')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'csv' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>CSV</button>
           </div>
@@ -462,6 +593,55 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Origem / Loja</label>
                 <input type="text" placeholder="Ex: Carrefour" value={manualData.origem} onChange={(e) => setManualData({ ...manualData, origem: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
               </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isSavings"
+                    checked={manualData.isSavings}
+                    onChange={(e) => setManualData({ ...manualData, isSavings: e.target.checked, isCreditCard: false })}
+                    className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 border-gray-300"
+                  />
+                  <label htmlFor="isSavings" className="text-sm text-gray-700 font-medium">Poupança</label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isCreditCard"
+                    checked={manualData.isCreditCard}
+                    onChange={(e) => setManualData({ ...manualData, isCreditCard: e.target.checked, isSavings: false })}
+                    className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-gray-300"
+                  />
+                  <label htmlFor="isCreditCard" className="text-sm text-gray-700 font-medium">Cartão de Crédito</label>
+                </div>
+              </div>
+
+              {manualData.isCreditCard && (
+                <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Parcela Atual</label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Ex: 1"
+                      value={manualData.parcelaAtual}
+                      onChange={(e) => setManualData({ ...manualData, parcelaAtual: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Total Parcelas</label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Ex: 10"
+                      value={manualData.totalParcelas}
+                      onChange={(e) => setManualData({ ...manualData, totalParcelas: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
               <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 shadow-lg active:scale-95 transition-all">Salvar Transação</button>
             </form>
           )}
@@ -485,6 +665,71 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
               </div>
               <button onClick={processOCR} disabled={!ocrImage || loading} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
                 {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Digitalizar com Gemini IA"}
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'invoice' && (
+            <div className="space-y-4 flex flex-col h-full">
+              <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100">
+                <p className="font-semibold mb-1">Como usar:</p>
+                <ol className="list-decimal list-inside space-y-1 text-xs">
+                  <li>Acesse o site do banco e abra a fatura do cartão.</li>
+                  <li>Selecione e copie (Ctrl+C) as linhas das transações <b>OU</b> salve como .txt.</li>
+                  <li>Cole (Ctrl+V) no campo abaixo <b>OU</b> envie o arquivo .txt.</li>
+                </ol>
+              </div>
+
+              {/* Botão de Upload de TXT */}
+              <div className="flex items-center justify-center w-full">
+                <label htmlFor="dropzone-file-txt" className="flex flex-col items-center justify-center w-full h-24 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <svg aria-hidden="true" className="w-8 h-8 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <p className="text-xs text-gray-500"><span className="font-semibold">Clique para enviar fatura .txt</span></p>
+                  </div>
+                  <input
+                    id="dropzone-file-txt"
+                    type="file"
+                    accept=".txt"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => setInvoiceText(e.target?.result as string || '');
+                        reader.readAsText(file);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-medium text-gray-700">Ano da Fatura:</label>
+                <select
+                  value={invoiceYear}
+                  onChange={(e) => setInvoiceYear(Number(e.target.value))}
+                  className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                >
+                  <option value={new Date().getFullYear() - 1}>{new Date().getFullYear() - 1}</option>
+                  <option value={new Date().getFullYear()}>{new Date().getFullYear()}</option>
+                  <option value={new Date().getFullYear() + 1}>{new Date().getFullYear() + 1}</option>
+                </select>
+              </div>
+
+              <textarea
+                value={invoiceText}
+                onChange={(e) => setInvoiceText(e.target.value)}
+                placeholder={`Exemplo:\n09/01 LOJA X PARC 01/05 CIDADE BR 100,00 0,00\n10/01 NETFLIX SAO PAULO BR 55,90 0,00`}
+                className="w-full flex-1 min-h-[200px] p-4 rounded-xl border border-gray-200 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              />
+
+              <button
+                onClick={processInvoiceText}
+                disabled={!invoiceText.trim() || loading}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 shadow-lg active:scale-95 transition-all"
+              >
+                {loading ? 'Processando...' : 'Processar Fatura'}
               </button>
             </div>
           )}

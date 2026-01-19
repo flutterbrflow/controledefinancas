@@ -17,6 +17,10 @@ export interface Transaction {
   numeroDocumento: string | null;
   valor: number;
   createdAt: string;
+  parcelaAtual?: number;
+  totalParcelas?: number;
+  isCreditCard?: boolean;
+  isSavings?: boolean;
 }
 
 export interface RecurringTransaction {
@@ -33,6 +37,11 @@ export interface FinanceSummary {
   saldoTotal: number;
   receitasMes: number;
   despesasMes: number;
+  totalParcelasRestantes?: number;
+  totalGeralCartao?: number;
+  saldoPoupanca?: number;
+  aplicacoesMes?: number;
+  resgatesMes?: number;
 }
 
 export interface Goal {

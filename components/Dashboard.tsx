@@ -30,6 +30,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [minValue, setMinValue] = useState('');
   const [maxValue, setMaxValue] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [searchAllPeriods, setSearchAllPeriods] = useState(false);
+  const [activeContext, setActiveContext] = useState<'account' | 'savings' | 'credit_card'>('account');
 
   // Estados para seletor de período (timeline)
   const currentDate = new Date();
@@ -61,7 +63,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         if (Array.isArray(data)) {
           setTransactions(data);
           // Calcula resumo financeiro com os dados carregados
-          calculateSummary(data);
+          setTransactions(data);
+          // Calcula resumo financeiro com os dados carregados
+          setSummary(calculateSummary(data));
         }
       } catch (err) {
         console.error("Erro ao carregar transações:", err);
@@ -71,39 +75,90 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   }, [user.id]); // Recarrega quando o ID do usuário muda
 
   // Função que calcula o resumo financeiro (saldo total, receitas e despesas do mês)
+  // Função que calcula o resumo financeiro
   const calculateSummary = (data: Transaction[]) => {
-    // Arredonda para 2 casas decimais para evitar problemas de ponto flutuante
-    const total = Math.round(data.reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
+    // Filtra transações por contexto (poupança é incluída na conta corrente pois vem do extrato)
+    const accountTransactions = data.filter(t => !t.isCreditCard && !t.historico.includes('Saldo Inicial Poupança (Ajuste)')); // Inclui poupança mas remove o ajuste técnico
+    const savingsTransactions = data.filter(t => t.isSavings);
+    const creditTransactions = data.filter(t => t.isCreditCard);
 
-    // Obtém mês e ano atuais
+    // Saldo Total (Conta Corrente + Poupança = extrato bancário completo)
+    const saldoConta = Math.round(accountTransactions.reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
+
+    // Saldo Poupança (invertido porque no extrato da conta: aplicação=negativo, resgate=positivo)
+    // Para a poupança: aplicação deve ser positivo (entrada), resgate deve ser negativo (saída)
+    const saldoPoupanca = Math.round(savingsTransactions.reduce((acc, curr) => acc + (-curr.valor), 0) * 100) / 100;
+
+    // Fatura Total (Apenas Cartão)
+    const saldoCartao = Math.round(creditTransactions.reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
+
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
     const currentMonthStr = `${currentYear}-${currentMonth}`;
 
-    // Filtra apenas transações do mês atual
-    const monthData = data.filter(t => {
+    // Seleciona transações baseado no contexto ativo
+    const targetTransactions = activeContext === 'account'
+      ? accountTransactions
+      : activeContext === 'savings'
+        ? savingsTransactions
+        : creditTransactions;
+
+    const monthData = targetTransactions.filter(t => {
       if (!t.data) return false;
-      // Compara YYYY-MM diretamente para evitar problemas de fuso horário
       return t.data.startsWith(currentMonthStr);
     });
 
-    // Calcula total de receitas (valores positivos) do mês
     const receitas = Math.round(monthData
       .filter(t => t.valor > 0)
       .reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
 
-    // Calcula total de despesas (valores negativos) do mês
     const despesas = Math.round(monthData
       .filter(t => t.valor < 0)
       .reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
 
-    // Atualiza estado do resumo financeiro
-    setSummary({
-      saldoTotal: total,
-      receitasMes: receitas,
-      despesasMes: Math.abs(despesas) // Converte para valor positivo para exibição
+    // Calcula aplicações e resgates do mês (poupança)
+    // Invertido: no extrato, aplicação é negativo (saída da conta) = entrada na poupança
+    // Invertido: no extrato, resgate é positivo (entrada na conta) = saída da poupança
+    const savingsMonthData = savingsTransactions.filter(t => t.data?.startsWith(currentMonthStr));
+    const aplicacoesMes = Math.round(savingsMonthData
+      .filter(t => t.valor < 0) // Negativo no extrato = dinheiro indo PARA poupança
+      .reduce((acc, curr) => acc + Math.abs(curr.valor), 0) * 100) / 100;
+    const resgatesMes = Math.round(savingsMonthData
+      .filter(t => t.valor > 0) // Positivo no extrato = dinheiro vindo DA poupança
+      .reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
+
+    // Calcula total de parcelas restantes (para transações de cartão parceladas)
+    let totalParcelasRestantes = 0;
+    creditTransactions.forEach(t => {
+      if (t.parcelaAtual && t.totalParcelas && t.totalParcelas > t.parcelaAtual) {
+        const parcelasRestantes = t.totalParcelas - t.parcelaAtual;
+        totalParcelasRestantes += Math.abs(t.valor) * parcelasRestantes;
+      }
     });
+    totalParcelasRestantes = Math.round(totalParcelasRestantes * 100) / 100;
+
+    // Total geral do cartão = débito atual + parcelas futuras
+    const totalGeralCartao = Math.round((Math.abs(saldoCartao) + totalParcelasRestantes) * 100) / 100;
+
+    // Define saldo baseado no contexto
+    let saldoTotal = saldoConta;
+    if (activeContext === 'savings') saldoTotal = saldoPoupanca;
+    else if (activeContext === 'credit_card') saldoTotal = saldoCartao;
+
+    const summaryData = {
+      saldoTotal,
+      receitasMes: receitas,
+      despesasMes: Math.abs(despesas),
+      totalParcelasRestantes,
+      totalGeralCartao,
+      saldoPoupanca,
+      saldoConta, // Exportando saldos individuais também
+      saldoCartao,
+      aplicacoesMes,
+      resgatesMes
+    };
+    return summaryData;
   };
 
   // Função auxiliar para criar chave única de transação (para detecção de duplicatas)
@@ -166,7 +221,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       const updatedData = await apiService.getTransactions(user.id);
       setTransactions(updatedData);
-      calculateSummary(updatedData);
+      setTransactions(updatedData);
+      setSummary(calculateSummary(updatedData));
       setIsDialogOpen(false);
     } catch (err: any) {
       alert(`Erro ao importar transações: ${err.message}`);
@@ -177,9 +233,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       // Filtro por período selecionado (ano/mês)
-      const selectedMonthStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
-      const matchesPeriod = t.data?.startsWith(selectedMonthStr);
-      if (!matchesPeriod) return false;
+      // Se a opção "Buscar em todo o período" estiver marcada, IGNORA o filtro de mês
+      if (!searchAllPeriods) {
+        const selectedMonthStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+        const matchesPeriod = t.data?.startsWith(selectedMonthStr);
+        if (!matchesPeriod) return false;
+      }
 
       // Filtro por Termo de Busca (Histórico ou Origem)
       const matchesSearch = t.historico.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -195,9 +254,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       const matchesMinVal = minValue ? val >= parseFloat(minValue) : true;
       const matchesMaxVal = maxValue ? val <= parseFloat(maxValue) : true;
 
-      return matchesSearch && matchesDateFrom && matchesDateTo && matchesMinVal && matchesMaxVal;
+      // Filtro por Contexto (Conta Corrente inclui poupança, pois vem do extrato bancário)
+      let isContextMatch = false;
+      if (activeContext === 'account') isContextMatch = !t.isCreditCard; // Inclui poupança
+      else if (activeContext === 'savings') isContextMatch = !!t.isSavings;
+      else if (activeContext === 'credit_card') isContextMatch = !!t.isCreditCard;
+
+      return matchesSearch && matchesDateFrom && matchesDateTo && matchesMinVal && matchesMaxVal && isContextMatch;
     });
-  }, [transactions, searchTerm, dateFrom, dateTo, minValue, maxValue, selectedYear, selectedMonth]);
+  }, [transactions, searchTerm, dateFrom, dateTo, minValue, maxValue, selectedYear, selectedMonth, searchAllPeriods, activeContext]);
+
+  // Atualiza o estado summary sempre que as transações filtradas ou o contexto mudarem
+  useEffect(() => {
+    if (filteredTransactions.length > 0 || transactions.length > 0) {
+      setSummary(calculateSummary(filteredTransactions));
+    }
+  }, [filteredTransactions, activeContext, transactions]);
 
   const generateSampleData = async () => {
     const now = new Date();
@@ -224,7 +296,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       }
       const updatedData = await apiService.getTransactions(user.id);
       setTransactions(updatedData);
-      calculateSummary(updatedData);
+      setTransactions(updatedData);
+      setSummary(calculateSummary(updatedData));
       alert('✅ Dados de exemplo gerados com sucesso!');
     } catch (err) {
       alert('Erro ao gerar dados de exemplo.');
@@ -253,7 +326,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       await apiService.deleteTransaction(user.id, id);
       const updated = transactions.filter(t => t.id !== id);
       setTransactions(updated);
-      calculateSummary(updated);
+      setTransactions(updated);
+      setSummary(calculateSummary(updated));
     } catch (err) {
       alert('Erro ao excluir transação.');
     }
@@ -329,42 +403,124 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       </div>
 
-      {/* Cartões de Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 transition-all hover:shadow-md">
-          <p className="text-sm font-medium text-gray-500 mb-1">Saldo Atual</p>
-          <p className={`text-3xl font-semibold ${summary.saldoTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {formatCurrency(summary.saldoTotal)}
-          </p>
-          <div className="mt-2 text-xs text-gray-400">Total acumulado em conta</div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 transition-all hover:shadow-md">
-          <p className="text-sm font-medium text-gray-500 mb-1">Total de Receitas do Mês</p>
-          <p className="text-xl font-medium text-green-600">
-            {formatCurrency(summary.receitasMes)}
-          </p>
-          <div className="mt-2 flex items-center gap-1 text-xs text-green-500">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-            </svg>
-            Entradas deste mês
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 transition-all hover:shadow-md">
-          <p className="text-sm font-medium text-gray-500 mb-1">Total de Despesas do Mês</p>
-          <p className="text-xl font-medium text-red-600">
-            {formatCurrency(summary.despesasMes)}
-          </p>
-          <div className="mt-2 flex items-center gap-1 text-xs text-red-500">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-            </svg>
-            Saídas deste mês
-          </div>
-        </div>
+      {/* Seletor de Contexto */}
+      <div className="flex bg-gray-100 p-1 rounded-xl w-full sm:w-fit self-center sm:self-auto">
+        <button
+          onClick={() => setActiveContext('account')}
+          className={`flex-1 sm:flex-none px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeContext === 'account' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Conta Corrente
+        </button>
+        <button
+          onClick={() => setActiveContext('savings')}
+          className={`flex-1 sm:flex-none px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeContext === 'savings' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Poupança
+        </button>
+        <button
+          onClick={() => setActiveContext('credit_card')}
+          className={`flex-1 sm:flex-none px-4 py-2 text-sm font-semibold rounded-lg transition-all ${activeContext === 'credit_card' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Cartão de Crédito
+        </button>
       </div>
+
+      {/* Cartões de Resumo */}
+      {/* Calculamos o saldo TOTAL usando 'transactions' (sem filtro de data), mas o resumo mensal usa 'filteredTransactions' */}
+      {(() => {
+        // Resumo com base nas transações VISÍVEIS (filtradas por mês/data)
+        const filteredSummary = calculateSummary(filteredTransactions);
+
+        // Resumo GLOBAL para saldo total (sem filtro de transação)
+        // Isso garante que o Saldo da Poupança (e da Conta) seja o acumulado real, e não apenas do mês selecionado
+        const globalSummary = calculateSummary(transactions);
+
+        const displaySaldo = activeContext === 'account' ? globalSummary.saldoConta :
+          activeContext === 'savings' ? globalSummary.saldoPoupanca :
+            filteredSummary.saldoCartao;
+
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className={`bg-white p-6 rounded-xl shadow-sm border transition-all hover:shadow-md ${activeContext === 'savings' ? 'border-emerald-100' : activeContext === 'credit_card' ? 'border-blue-100' : 'border-gray-100'}`}>
+              <p className="text-sm font-medium text-gray-500 mb-1">
+                {activeContext === 'account' ? 'Saldo Atual (Total)' : activeContext === 'savings' ? 'Saldo Poupança (Total)' : 'Total Faturado (Período)'}
+              </p>
+              <p className={`text-3xl font-semibold ${activeContext === 'account' ? (displaySaldo >= 0 ? 'text-green-600' : 'text-red-600') : activeContext === 'savings' ? 'text-emerald-600' : 'text-red-600'}`}>
+                {activeContext === 'credit_card' ? formatCurrency(Math.abs(displaySaldo)) : formatCurrency(displaySaldo)}
+              </p>
+              <div className="mt-2 text-xs text-gray-400">
+                {activeContext === 'account' ? 'Disponível em conta' : activeContext === 'savings' ? 'Rendendo na poupança' : 'Gastos já lançados no cartão'}
+              </div>
+            </div>
+
+            <div className={`bg-white p-6 rounded-xl shadow-sm border transition-all hover:shadow-md ${activeContext === 'savings' ? 'border-emerald-100' : activeContext === 'credit_card' ? 'border-blue-100' : 'border-gray-100'}`}>
+              <p className="text-sm font-medium text-gray-500 mb-1">
+                {activeContext === 'account' ? 'Total de Receitas do Mês' : activeContext === 'savings' ? 'Aplicações do Mês' : 'Parcelas Restantes'}
+              </p>
+              <p className={`text-xl font-medium ${activeContext === 'account' ? 'text-green-600' : activeContext === 'savings' ? 'text-emerald-600' : 'text-orange-600'}`}>
+                {activeContext === 'account' ? formatCurrency(filteredSummary.receitasMes) : activeContext === 'savings' ? formatCurrency(filteredSummary.aplicacoesMes || 0) : formatCurrency(filteredSummary.totalParcelasRestantes || 0)}
+              </p>
+              <div className="mt-2 flex items-center gap-1 text-xs text-gray-400">
+                {activeContext === 'account' ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    <span className="text-green-600 font-medium">Entradas</span>
+                    <span className="text-gray-400 ml-1">neste mês</span>
+                  </>
+                ) : activeContext === 'savings' ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span className="text-emerald-600 font-medium">Aportes</span>
+                    <span className="text-gray-400 ml-1">neste mês</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-orange-600 font-medium">Parcelado</span>
+                    <span className="text-gray-400 ml-1">a vencer</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className={`bg-white p-6 rounded-xl shadow-sm border transition-all hover:shadow-md ${activeContext === 'savings' ? 'border-emerald-100' : activeContext === 'credit_card' ? 'border-blue-100' : 'border-gray-100'}`}>
+              <p className="text-sm font-medium text-gray-500 mb-1">
+                {activeContext === 'account' ? 'Total de Despesas do Mês' : activeContext === 'savings' ? 'Resgates do Mês' : 'Fatura Atual Total'}
+              </p>
+              <p className={`text-xl font-medium ${activeContext === 'account' ? 'text-red-600' : activeContext === 'savings' ? 'text-orange-600' : 'text-blue-600'}`}>
+                {activeContext === 'account' ? formatCurrency(filteredSummary.despesasMes) : activeContext === 'savings' ? formatCurrency(filteredSummary.resgatesMes || 0) : formatCurrency(filteredSummary.totalGeralCartao || 0)}
+              </p>
+              <div className="mt-2 flex items-center gap-1 text-xs text-gray-400">
+                {activeContext === 'account' ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                    </svg>
+                    <span className="text-red-600 font-medium">Saídas</span>
+                    <span className="text-gray-400 ml-1">neste mês</span>
+                  </>
+                ) : activeContext === 'savings' ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                    </svg>
+                    <span className="text-orange-600 font-medium">Retiradas</span>
+                    <span className="text-gray-400 ml-1">neste mês</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-blue-600 font-medium">Total</span>
+                    <span className="text-gray-400 ml-1">acumulado</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Seletor de Período - Timeline de Anos e Meses */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -459,9 +615,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       </div>
 
       {/* Seção da Tabela de Transações */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className={`bg-white rounded-xl shadow-sm border overflow-hidden ${activeContext === 'credit_card' ? 'border-purple-100' : 'border-gray-100'}`}>
         <div className="p-6 border-b border-gray-100 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-          <h3 className="font-semibold text-lg text-gray-900 whitespace-nowrap">Últimas Transações</h3>
+          <h3 className={`font-semibold text-lg whitespace-nowrap text-gray-900`}>
+            {activeContext === 'credit_card' ? 'Fatura do Cartão' : 'Últimas Transações'}
+          </h3>
 
           <div className="flex flex-1 gap-2 max-w-2xl">
             <div className="relative flex-1">
@@ -478,6 +636,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               />
             </div>
+
+            <label className="flex items-center gap-2 px-2 cursor-pointer" title="Pesquisar em todos os anos e meses">
+              <input
+                type="checkbox"
+                checked={searchAllPeriods}
+                onChange={(e) => setSearchAllPeriods(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-600 whitespace-nowrap hidden sm:inline">Todo o período</span>
+            </label>
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`px-3 py-2 rounded-lg border text-sm font-medium transition-all flex items-center gap-2 ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -497,64 +665,66 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
 
         {/* Advanced Filters Panel */}
-        {showFilters && (
-          <div className="p-4 bg-gray-50 border-b border-gray-100 animate-in slide-in-from-top-2 duration-200">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Data de</label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                />
+        {
+          showFilters && (
+            <div className="p-4 bg-gray-50 border-b border-gray-100 animate-in slide-in-from-top-2 duration-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Data de</label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Data até</label>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Valor Mín. (R$)</label>
+                  <input
+                    type="number"
+                    placeholder="0,00"
+                    value={minValue}
+                    onChange={(e) => setMinValue(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Valor Máx. (R$)</label>
+                  <input
+                    type="number"
+                    placeholder="99999,99"
+                    value={maxValue}
+                    onChange={(e) => setMaxValue(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  />
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Data até</label>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Valor Mín. (R$)</label>
-                <input
-                  type="number"
-                  placeholder="0,00"
-                  value={minValue}
-                  onChange={(e) => setMinValue(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Valor Máx. (R$)</label>
-                <input
-                  type="number"
-                  placeholder="99999,99"
-                  value={maxValue}
-                  onChange={(e) => setMaxValue(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                />
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setDateFrom('');
+                    setDateTo('');
+                    setMinValue('');
+                    setMaxValue('');
+                  }}
+                  className="text-xs text-gray-500 font-medium hover:text-blue-600 transition-colors"
+                >
+                  Limpar Todos os Filtros
+                </button>
               </div>
             </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setDateFrom('');
-                  setDateTo('');
-                  setMinValue('');
-                  setMaxValue('');
-                }}
-                className="text-xs text-gray-500 font-medium hover:text-blue-600 transition-colors"
-              >
-                Limpar Todos os Filtros
-              </button>
-            </div>
-          </div>
-        )}
+          )
+        }
 
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -584,6 +754,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     </td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-xs truncate">
                       {t.historico}
+                      {t.parcelaAtual && t.totalParcelas && (
+                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200" title={`Parcela ${t.parcelaAtual} de ${t.totalParcelas}`}>
+                          {t.parcelaAtual}/{t.totalParcelas}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500 italic">
                       {t.dependenciaOrigem}
@@ -611,7 +786,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         <div className="p-4 bg-gray-50 text-center border-t border-gray-100">
           <p className="text-sm text-gray-500">Mostrando {filteredTransactions.length} transações.</p>
         </div>
-      </div>
+      </div >
 
       <TransactionDialog
         isOpen={isDialogOpen}
@@ -619,6 +794,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         onImport={handleImport}
         userId={user.id}
       />
-    </div>
+    </div >
   );
 };

@@ -37,7 +37,7 @@ export const apiService = {
 
     // Busca todas as transações do usuário
     async getTransactions(userId: string) {
-        return fetchAPI(`${API_URL}/transactions.php?userId=${userId}`);
+        return fetchAPI(`${API_URL}/transactions.php?userId=${userId}&_t=${Date.now()}`);
     },
 
     // Adiciona nova(s) transação(ões)
@@ -67,7 +67,7 @@ export const apiService = {
 
     // Busca todas as metas do usuário
     async getGoals(userId: string) {
-        return fetchAPI(`${API_URL}/goals.php?userId=${userId}`);
+        return fetchAPI(`${API_URL}/goals.php?userId=${userId}&_t=${Date.now()}`);
     },
 
     // Adiciona nova meta
@@ -99,7 +99,7 @@ export const apiService = {
 
     // Busca todas as transações recorrentes do usuário
     async getRecurring(userId: string) {
-        return fetchAPI(`${API_URL}/recurring.php?userId=${userId}`);
+        return fetchAPI(`${API_URL}/recurring.php?userId=${userId}&_t=${Date.now()}`);
     },
 
     // Adiciona nova transação recorrente
@@ -129,7 +129,7 @@ export const apiService = {
 
     // Busca dados do usuário
     async getUser(userId: string) {
-        return fetchAPI(`${API_URL}/user.php?userId=${userId}`);
+        return fetchAPI(`${API_URL}/user.php?userId=${userId}&_t=${Date.now()}`);
     },
 
     // Atualiza dados do usuário (nome e email)
@@ -162,6 +162,6 @@ export const apiService = {
 
     // Busca sugestões de transações recorrentes baseado em padrões
     async getSuggestedRecurring(userId: string) {
-        return fetchAPI(`${API_URL}/suggestions.php?userId=${userId}`);
+        return fetchAPI(`${API_URL}/suggestions.php?userId=${userId}&_t=${Date.now()}`);
     }
 };
