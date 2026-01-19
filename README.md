@@ -98,16 +98,16 @@ npm run build
 ## 📚 Documentação
 
 ### Para Usuários
-- [📖 Guia de Uso](doc/README.md#funcionalidades)
-- [⚖️ Como Bater Saldo com o Banco](doc/README.md#como-bater-o-saldo-com-o-banco)
-- [❓ FAQ](#faq)
+- [📖 Guia de Funcionalidades](doc/funcionalidades.md)
+- [⚖️ Como Bater Saldo com o Banco](doc/implantacao.md#problema-saldo-não-bate-com-banco)
+- [❓ FAQ](README.md#faq)
 
 ### Para Desenvolvedores
-- [🏗️ Arquitetura](doc/README.md#arquitetura-do-sistema)
-- [📂 Estrutura do Projeto](doc/README.md#estrutura-do-projeto)
-- [🤖 Integração com IA](doc/README.md#integração-com-ia)
-- [🗄️ Schema do Banco](doc/README.md#banco-de-dados)
-- [👨‍💻 Guia de Desenvolvimento](doc/README.md#guia-de-desenvolvimento)
+- [🏗️ Arquitetura](doc/arquitetura.md)
+- [📂 Estrutura do Projeto](doc/arquitetura.md#estrutura-do-projeto)
+- [🤖 Integração com IA](doc/guia_dev.md#integração-com-ia)
+- [🗄️ Schema do Banco](doc/banco_de_dados.md)
+- [👨‍💻 Guia de Desenvolvimento](doc/guia_dev.md)
 
 ---
 
