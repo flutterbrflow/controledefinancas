@@ -3,7 +3,7 @@ require_once 'db.php';
 
 $userId = $_GET['userId'] ?? '';
 if (!$userId) {
-    echo json_encode(['error' => 'UserId is required']);
+    echo json_encode(['error' => 'ID do usuário é obrigatório']);
     exit;
 }
 
@@ -23,7 +23,7 @@ switch ($method) {
     case 'POST':
         $input = json_decode(file_get_contents('php://input'), true);
         
-        // Helper to generate UUID
+        // Auxiliar para gerar UUID
         $genUuid = function() {
             $uuid = bin2hex(random_bytes(16));
             return substr($uuid, 0, 8) . '-' . substr($uuid, 8, 4) . '-4' . substr($uuid, 12, 3) . '-' . substr($uuid, 15, 4) . '-' . substr($uuid, 19, 12);
@@ -53,7 +53,7 @@ switch ($method) {
             echo json_encode(['success' => true, 'ids' => $ids]);
         } catch (Exception $e) {
             $pdo->rollBack();
-            echo json_encode(['error' => 'Failed to save transactions: ' . $e->getMessage()]);
+            echo json_encode(['error' => 'Falha ao salvar transações: ' . $e->getMessage()]);
         }
         break;
 
@@ -67,7 +67,7 @@ switch ($method) {
             // Se não houver ID, apaga todas as transações do usuário
             $stmt = $pdo->prepare("DELETE FROM transactions WHERE user_id = ?");
             $stmt->execute([$userId]);
-            echo json_encode(['success' => true, 'message' => 'All transactions deleted']);
+            echo json_encode(['success' => true, 'message' => 'Todas as transações foram excluídas']);
         }
         break;
 }

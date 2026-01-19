@@ -173,7 +173,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   };
 
-  // Filter Logic - inclui filtro por período selecionado
+  // Lógica de Filtro - inclui filtro por período selecionado
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       // Filtro por período selecionado (ano/mês)
@@ -181,16 +181,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       const matchesPeriod = t.data?.startsWith(selectedMonthStr);
       if (!matchesPeriod) return false;
 
-      // Search Term Match (History or Origin)
+      // Filtro por Termo de Busca (Histórico ou Origem)
       const matchesSearch = t.historico.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.dependenciaOrigem.toLowerCase().includes(searchTerm.toLowerCase());
 
-      // Date Range Match
+      // Filtro por Data
       const tDate = new Date(t.data);
       const matchesDateFrom = dateFrom ? tDate >= new Date(dateFrom) : true;
       const matchesDateTo = dateTo ? tDate <= new Date(dateTo) : true;
 
-      // Value Range Match
+      // Filtro por Valor
       const val = Math.abs(t.valor);
       const matchesMinVal = minValue ? val >= parseFloat(minValue) : true;
       const matchesMaxVal = maxValue ? val <= parseFloat(maxValue) : true;
@@ -329,7 +329,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* Cartões de Resumo */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 transition-all hover:shadow-md">
           <p className="text-sm font-medium text-gray-500 mb-1">Saldo Atual</p>
@@ -458,7 +458,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       </div>
 
-      {/* Transactions Table Section */}
+      {/* Seção da Tabela de Transações */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
           <h3 className="font-semibold text-lg text-gray-900 whitespace-nowrap">Últimas Transações</h3>

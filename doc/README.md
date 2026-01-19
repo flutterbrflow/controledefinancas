@@ -85,6 +85,7 @@ Sistema completo de **gestão financeira pessoal** desenvolvido com React + Type
 
 **Arquivo**: `components/Dashboard.tsx`
 
+- **Visual Timeline**: Componente visual para seleção rápida de Ano e Mês.
 - **Saldo Total**: Soma de todas as transações (receitas - despesas)
 - **Receitas do Mês**: Total de entradas do mês atual
 - **Despesas do Mês**: Total de saídas do mês atual
@@ -117,6 +118,9 @@ const saldoTotal = Math.round(total * 100) / 100;
   - Valor (R$ 1.234,56 ou 1,234.56)
   - Débito/Crédito separados
 - ✅ **Ignora automaticamente linhas de "SALDO"**
+- ✅ **Detecção de Duplicatas**: Hash baseado em (data + histórico + valor) impede a re-importação.
+  - Exibe alerta com contagem de novos vs duplicados.
+  - Permite importar apenas os novos.
 - ✅ Trata valores negativos corretamente
 
 **Heurística de Valor**:
@@ -229,6 +233,7 @@ if (tem_ponto && tem_virgula) {
   - Limite de 2MB
   - Preview antes do upload
   - Upload automático ao selecionar
+  - **Correção de Persistência**: O avatar é retornado no login para garantir persistência entre sessões.
 
 ---
 
@@ -523,6 +528,12 @@ npm run build
 ---
 
 ## 📝 Histórico de Alterações
+
+### v1.2.0 (Janeiro 2026)
+- ✅ Seletor de Período (Timeline) no Dashboard
+- ✅ Detecção de transações duplicadas na importação CSV
+- ✅ Persistência do Avatar do usuário
+- ✅ Nova Logo e Favicon
 
 ### v1.0.0 (2025-01-01)
 - ✅ Migração para `@google/generative-ai`

@@ -14,9 +14,10 @@ Sistema de gestão financeira pessoal desenvolvido com tecnologias modernas, ofe
 ### ✨ Principais Funcionalidades
 
 - 📊 **Dashboard Interativo** - Saldo, receitas e despesas em tempo real
+- 📅 **Navegação por Linha do Tempo** - Filtre facilmente por anos e meses
 - 💸 **Múltiplas Formas de Entrada**:
   - ✅ Manual (formulário)
-  - ✅ Importação CSV (suporta formatos bancários brasileiros)
+  - ✅ Importação CSV com **detecção de duplicatas**
   - ✅ OCR de Recibos (foto → dados extraídos por IA)
 - 📈 **Relatórios Inteligentes**:
   - Gráficos interativos (Recharts)
@@ -25,7 +26,7 @@ Sistema de gestão financeira pessoal desenvolvido com tecnologias modernas, ofe
 - 🎯 **Metas Financeiras** com planejamento automático por IA
 - 📅 **Agenda de Contas** recorrentes
 - 🤖 **Sugestões Automáticas** de categorização
-- 👤 **Perfil Personalizável** com upload de avatar
+- 👤 **Perfil Personalizável** com upload de avatar persistente
 
 ---
 
@@ -64,7 +65,7 @@ http://localhost:3000
 ### Compilação para Produção
 
 ```bash
-# Gerar build otim izado
+# Gerar build otimizado
 npm run build
 
 # Os arquivos estarão em dist/
@@ -88,9 +89,9 @@ npm run build
 
 ### Integrações
 - **Google Gemini AI** 2.5 Flash
-  - Insights financeiros
-  - OCR de recibos
-  - Planejamento de metas
+- Insights financeiros
+- OCR de recibos
+- Planejamento de metas
 
 ---
 
@@ -114,6 +115,7 @@ npm run build
 
 ### 1. Dashboard
 Visão geral completa das finanças:
+- **Linha do Tempo Visual**: Navegue intuitivamente entre anos (2025-2026) e meses.
 - Saldo total (soma de todas as transações)
 - Receitas do mês atual
 - Despesas do mês atual
@@ -131,6 +133,7 @@ Formulário simples com campos:
 - Auto-detecção de encoding (UTF-8, Windows-1252)
 - Identificação automática de colunas
 - **Ignora linhas de "SALDO" automaticamente**
+- **Detecção Inteligente de Duplicatas**: Evita importar a mesma transação duas vezes.
 - Suporte a formatos BR (R$ 1.234,56) e US (1,234.56)
 
 #### OCR de Recibos
@@ -250,6 +253,12 @@ R: Exporte para Excel ou faça backup do banco MySQL.
 ---
 
 ## 📝 Histórico de Alterações
+
+### v1.2.0 (Janeiro 2026)
+- ✅ Seletor de Período (Timeline) no Dashboard
+- ✅ Detecção de transações duplicadas na importação CSV
+- ✅ Persistência do Avatar do usuário
+- ✅ Nova Logo e Favicon
 
 ### v1.1.0 (Janeiro 2025)
 - ✅ Suporte a PDF no OCR de recibos

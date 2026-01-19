@@ -11,7 +11,7 @@ if ($action === 'register') {
         exit;
     }
 
-    $id = bin2hex(random_bytes(16)); // Simple UUID simulation or use a proper lib
+    $id = bin2hex(random_bytes(16)); // Simulação simples de UUID ou use uma biblioteca apropriada
     $id = substr($id, 0, 8) . '-' . substr($id, 8, 4) . '-4' . substr($id, 12, 3) . '-' . substr($id, 15, 4) . '-' . substr($id, 19, 12);
     
     $password = password_hash($data['password'], PASSWORD_DEFAULT);
