@@ -27,15 +27,15 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
   const ocrInputRef = useRef<HTMLInputElement>(null);
 
   const generateId = () => {
-    // Check if crypto and randomUUID exist (only available in HTTPS or localhost)
+    // Verifica se crypto e randomUUID existem (apenas disponíveis em HTTPS ou localhost)
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
       return crypto.randomUUID();
     }
-    // Fallback for HTTP/NAS environments
+    // Fallback para ambientes HTTP/NAS
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
   };
 
-  // Manual Form State
+  // Estado do formulário manual
   const [manualData, setManualData] = useState({
     data: new Date().toISOString().split('T')[0],
     historico: '',
@@ -51,13 +51,14 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
     }
   };
 
-  const handleOcrImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleOcrImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
       const reader = new FileReader();
       reader.onloadend = () => {
         setOcrImage(reader.result as string);
       };
-      reader.readAsDataURL(e.target.files[0]);
+      reader.readAsDataURL(file);
     }
   };
 
@@ -101,15 +102,19 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
       const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
       const base64Data = ocrImage.split(',')[1];
 
+      // Detectar MIME type do arquivo (imagem ou PDF)
+      const mimeMatch = ocrImage.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
+      const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+
       const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
       const result = await model.generateContent([
         {
           inlineData: {
             data: base64Data,
-            mimeType: 'image/jpeg'
+            mimeType: mimeType
           }
         },
-        { text: "Extract receipt info: date (YYYY-MM-DD), total value (number, negative if expense), store name, short description. Return ONLY a JSON with keys: date, value, merchant, description." }
+        { text: "Extraia as informações do recibo/nota fiscal: data (AAAA-MM-DD), valor total (número, negativo se despesa), nome do estabelecimento, descrição curta. Retorne APENAS um JSON com as chaves: date, value, merchant, description." }
       ]);
 
       const response = result.response;
@@ -148,16 +153,16 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
     }
     clean = clean.replace(/[()\-DdCc]/g, '');
 
-    // Heurística de Localidade (BR vs US)
+    // Heurística de localidade (Brasil vs EUA)
     const lastComma = clean.lastIndexOf(',');
     const lastDot = clean.lastIndexOf('.');
 
     if (lastComma > -1 && lastDot > -1) {
       if (lastComma > lastDot) {
-        // Estilo BR: 1.234,56
+        // Estilo Brasil: 1.234,56
         clean = clean.replace(/\./g, '').replace(',', '.');
       } else {
-        // Estilo US: 1,234.56
+        // Estilo EUA: 1,234.56
         clean = clean.replace(/,/g, '');
       }
     } else if (lastComma > -1) {
@@ -239,7 +244,7 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
         reader.readAsText(file, 'UTF-8');
       });
 
-      // Heurística de encoding: se tiver muitos caracteres estranhos ou o replacement char do UTF-8
+      // Heurística de encoding: se tiver muitos caracteres estranhos ou o caractere de substituição do UTF-8
       let finalLines = text.split('\n');
       if (text.includes('\uFFFD') || (text.match(/[\u0080-\u00FF]/g) || []).length === 0 && text.includes(';')) {
         const reader2 = new FileReader();
@@ -268,7 +273,7 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
       let colIdx = { data: 0, historico: 1, valor: -1, debito: -1, credito: -1, origem: 1 };
       let headerFound = false;
 
-      // Primeiro, tentamos achar o cabeçalho nas primeiras linhas
+      // Primeiro, tentamos encontrar o cabeçalho nas primeiras linhas
       let startIndex = 0;
       for (let i = 0; i < Math.min(finalLines.length, 10); i++) {
         const line = finalLines[i].trim();
@@ -289,13 +294,13 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
           if (colIdx.historico === -1) colIdx.historico = 1;
           colIdx.origem = colIdx.historico;
           headerFound = true;
-          // Se achamos o cabeçalho, as transações começam na linha seguinte
+          // Se encontramos o cabeçalho, as transações começam na linha seguinte
           startIndex = i + 1;
           break;
         }
       }
 
-      // Se não achamos cabeçalho, começamos da linha 1 (pulamos a 0 por padrão)
+      // Se não encontramos cabeçalho, começamos da linha 1 (pulamos a 0 por padrão)
       if (!headerFound) {
         startIndex = 1;
       }
@@ -328,7 +333,7 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
             const dVal = colIdx.debito !== -1 ? normalizeNumericValue(rowValues[colIdx.debito]) : 0;
             const cVal = colIdx.credito !== -1 ? normalizeNumericValue(rowValues[colIdx.credito]) : 0;
 
-            // Em arquivos de débito/crédito, se houver valor em débito, ele costuma ser positivo no CSV, mas deve ser negativo no app
+            // Em arquivos de débito/crédito, se houver valor em débito, ele costuma ser positivo no CSV, mas deve ser negativo no aplicativo
             if (dVal !== 0) {
               valorStr = String(-Math.abs(dVal));
             } else if (cVal !== 0) {
@@ -336,22 +341,22 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
             }
           }
 
-          // Scan nature: apenas colunas de tamanho 1 para evitar pegar do histórico
+          // Escanear natureza: apenas colunas de tamanho 1 para evitar pegar do histórico
           rowValues.forEach(v => {
             const uv = v.toUpperCase();
             if (uv.length === 1 && (uv === 'C' || uv === 'D')) nature = uv;
           });
         } else {
-          // Fallback inteligente aprimorado
+          // Recuperação inteligente aprimorada
           dataStr = rowValues[0];
 
           rowValues.forEach((val, idx) => {
             const upperVal = val.toUpperCase();
             if (upperVal === 'D' || upperVal === 'C') nature = upperVal;
 
-            // Tentamos achar a coluna de valor (número que NÃO seja data e NÃO seja a primeira coluna de saldo provável)
+            // Tentamos encontrar a coluna de valor (número que NÃO seja data e NÃO seja a primeira coluna de saldo provável)
             if (/[0-9]/.test(val) && !val.includes('/') && idx > 0) {
-              // Evitamos pegar a última coluna se houver mais de uma (em BR a última costuma ser Saldo)
+              // Evitamos pegar a última coluna se houver mais de uma (no Brasil a última costuma ser Saldo)
               const looksLikeValue = !cleanLine.toUpperCase().includes('SALDO') || idx < rowValues.length - 1;
               if (looksLikeValue) {
                 const clean = val.replace(/[R$\s.]/g, '').replace(',', '.');
@@ -476,7 +481,7 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
                     <p className="text-xs text-gray-400">Nossa IA extrairá os dados para você</p>
                   </>
                 )}
-                <input type="file" ref={ocrInputRef} className="hidden" accept="image/*" onChange={handleOcrImageChange} />
+                <input ref={ocrInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleOcrImageChange} />
               </div>
               <button onClick={processOCR} disabled={!ocrImage || loading} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
                 {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Digitalizar com Gemini IA"}

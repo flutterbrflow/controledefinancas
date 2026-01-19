@@ -39,6 +39,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
     }
   };
 
+  // Função para formatar valores em moeda brasileira
+  const formatCurrency = (value: number): string => {
+    return value.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  };
+
   // Removed saveRecurring local storage helper
 
   const handleAddRecurring = async (e: React.FormEvent) => {
@@ -142,7 +150,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
                     ))}
                     {dTrans.map(t => (
                       <div key={t.id} className={`text-[9px] px-1 py-0.5 rounded truncate border ${t.valor > 0 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
-                        {Math.abs(t.valor).toLocaleString('pt-BR')}
+                        {formatCurrency(Math.abs(t.valor))}
                       </div>
                     ))}
                   </div>
@@ -177,7 +185,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
                 <div key={r.id} className={`p-3 rounded-xl border flex items-center justify-between transition-all ${r.ativa ? 'bg-white border-gray-100' : 'bg-gray-50 border-gray-100 opacity-60'}`}>
                   <div className="flex flex-col">
                     <span className="font-bold text-sm text-gray-900">{r.titulo}</span>
-                    <span className="text-[10px] text-gray-500 font-medium">Dia {r.diaVencimento} • R$ {r.valor.toLocaleString('pt-BR')}</span>
+                    <span className="text-[10px] text-gray-500 font-medium">Dia {r.diaVencimento} • R$ {formatCurrency(r.valor)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => toggleRecurring(r.id)} className={`p-1 rounded ${r.ativa ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-400 hover:bg-gray-200'}`}>
