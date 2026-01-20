@@ -12,7 +12,7 @@ O **Controle de Finanças** é um sistema completo de gestão financeira pessoal
 ┌─────────────────────────────────────────────────────────┐
 │                     FRONTEND (React)                     │
 ├─────────────────────────────────────────────────────────┤
-│  Components:                                             │
+│  Componentes:                                             │
 │  ├─ Dashboard      (Visão geral financeira)             │
 │  ├─ Transactions   (Cadastro manual/CSV/OCR)            │
 │  ├─ Reports        (Gráficos + IA Insights)             │
@@ -20,7 +20,7 @@ O **Controle de Finanças** é um sistema completo de gestão financeira pessoal
 │  ├─ Calendar       (Agenda de recorrentes)              │
 │  └─ UserProfile    (Perfil + Avatar upload)             │
 ├─────────────────────────────────────────────────────────┤
-│  Services:                                               │
+│  Serviços:                                               │
 │  └─ apiService.ts  (Cliente de API centralizado)        │
 └─────────────────────────────────────────────────────────┘
                            ↕ HTTP/REST
@@ -38,7 +38,7 @@ O **Controle de Finanças** é um sistema completo de gestão financeira pessoal
 ┌─────────────────────────────────────────────────────────┐
 │              DATABASE (MySQL/MariaDB)                    │
 ├─────────────────────────────────────────────────────────┤
-│  Tables:                                                 │
+│  Tabelas:                                                 │
 │  ├─ users                (Autenticação)                 │
 │  ├─ transactions         (Movimentações)                │
 │  ├─ recurring_transactions (Contas fixas)               │

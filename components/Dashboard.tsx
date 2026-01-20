@@ -77,8 +77,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   // Função que calcula o resumo financeiro (saldo total, receitas e despesas do mês)
   // Função que calcula o resumo financeiro
   const calculateSummary = (data: Transaction[]) => {
+    // Helper para normalizar strings (remover acentos e lowercase) para comparação robusta
+    const normalizeStr = (str: string) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : "";
+
     // Filtra transações por contexto (poupança é incluída na conta corrente pois vem do extrato)
-    const accountTransactions = data.filter(t => !t.isCreditCard && !t.historico.includes('Saldo Inicial Poupança (Ajuste)')); // Inclui poupança mas remove o ajuste técnico
+    const accountTransactions = data.filter(t => {
+      if (t.isCreditCard) return false;
+
+      const hist = normalizeStr(t.historico);
+      // FILTRO: Exclui Transações de Ajuste (Técnicas)
+      // 1. "Saldo Inicial Poupança (Ajuste)" - Nome padrão do script novo
+      // 2. "Aplicação Poupança Inicial" - Nome identificado no debug, usada anteriormente
+      if (
+        (hist.includes('ajuste') && (hist.includes('saldo') || hist.includes('poupanca'))) ||
+        hist.includes('aplicacao poupanca inicial')
+      ) {
+        return false;
+      }
+      return true;
+    });
     const savingsTransactions = data.filter(t => t.isSavings);
     const creditTransactions = data.filter(t => t.isCreditCard);
 
@@ -92,9 +109,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     // Fatura Total (Apenas Cartão)
     const saldoCartao = Math.round(creditTransactions.reduce((acc, curr) => acc + curr.valor, 0) * 100) / 100;
 
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+    // Usa o período SELECIONADO na timeline para os cálculos "do Mês"
+    const currentYear = selectedYear;
+    const currentMonth = String(selectedMonth + 1).padStart(2, '0');
     const currentMonthStr = `${currentYear}-${currentMonth}`;
 
     // Seleciona transações baseado no contexto ativo
@@ -615,6 +632,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       </div>
 
       {/* Seção da Tabela de Transações */}
+
       <div className={`bg-white rounded-xl shadow-sm border overflow-hidden ${activeContext === 'credit_card' ? 'border-purple-100' : 'border-gray-100'}`}>
         <div className="p-6 border-b border-gray-100 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
           <h3 className={`font-semibold text-lg whitespace-nowrap text-gray-900`}>

@@ -30,6 +30,12 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
   const [invoiceText, setInvoiceText] = useState('');
   const [invoiceYear, setInvoiceYear] = useState(new Date().getFullYear());
 
+  // Estado para OCR (texto extraído)
+  const [ocrExtractedText, setOcrExtractedText] = useState('');
+
+  // Estado para CSV (prévia do arquivo)
+  const [csvPreviewText, setCsvPreviewText] = useState('');
+
   const generateId = () => {
     // Verifica se crypto e randomUUID existem (apenas disponíveis em HTTPS ou localhost)
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -50,6 +56,27 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
     parcelaAtual: '',
     totalParcelas: ''
   });
+
+  // Função para limpar todos os campos e fechar o modal
+  const handleClose = () => {
+    setInvoiceText('');
+    setOcrExtractedText('');
+    setCsvPreviewText('');
+    setOcrImage(null);
+    setFile(null);
+    setActiveTab('manual');
+    setManualData({
+      data: new Date().toISOString().split('T')[0],
+      historico: '',
+      origem: '',
+      valor: '',
+      isCreditCard: false,
+      isSavings: false,
+      parcelaAtual: '',
+      totalParcelas: ''
+    });
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -131,6 +158,13 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
       const cleanJson = text.replace(/```json|```/g, '').trim();
       const data = JSON.parse(cleanJson);
 
+      // Mostra os dados extraídos no campo de texto
+      const extractedInfo = `Data: ${data.date || 'Não identificada'}
+Valor: ${data.value || 'Não identificado'}
+Estabelecimento: ${data.merchant || 'Não identificado'}
+Descrição: ${data.description || 'Não identificada'}`;
+      setOcrExtractedText(extractedInfo);
+
       setManualData({
         data: data.date || new Date().toISOString().split('T')[0],
         historico: data.description || data.merchant || 'Compra Digitalizada',
@@ -138,8 +172,8 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
         valor: data.value ? String(data.value) : '',
         isCreditCard: false
       });
-      setActiveTab('manual');
-      setToast({ message: "✅ Dados extraídos com sucesso!", type: 'success' });
+      // Não muda de aba automaticamente - deixa o usuário ver os dados extraídos
+      setToast({ message: "✅ Dados extraídos! Clique em 'Manual' para revisar e salvar.", type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (err) {
       console.error(err);
@@ -247,6 +281,9 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
         totalParcelas: ''
       });
       setOcrImage(null);
+      setOcrExtractedText('');
+      setCsvPreviewText('');
+      setFile(null);
       setToast(null);
     }, 1000);
   };
@@ -545,7 +582,7 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleClose}></div>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg relative overflow-hidden flex flex-col max-h-[90vh]">
         {toast && (
           <div className={`absolute top-0 left-0 right-0 p-4 text-white text-sm font-medium text-center z-[110] transition-all ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
@@ -559,7 +596,7 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
               <h2 className="text-xl font-bold text-gray-900">Nova Movimentação</h2>
               <p className="text-sm text-gray-500">Escolha como deseja adicionar.</p>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <button onClick={handleClose} className="text-gray-400 hover:text-gray-600">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
@@ -647,25 +684,57 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
           )}
 
           {activeTab === 'ocr' && (
-            <div className="space-y-6 text-center">
-              <div
-                className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer ${ocrImage ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
-                onClick={() => ocrInputRef.current?.click()}
-              >
-                {ocrImage ? (
-                  <img src={ocrImage} alt="Recibo" className="max-h-48 rounded-lg shadow-md" />
-                ) : (
-                  <>
-                    <div className="p-3 bg-blue-100 rounded-full text-blue-600"><svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg></div>
-                    <p className="text-sm font-medium text-gray-700">Tire uma foto ou selecione o recibo</p>
-                    <p className="text-xs text-gray-400">Nossa IA extrairá os dados para você</p>
-                  </>
-                )}
-                <input ref={ocrInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleOcrImageChange} />
+            <div className="space-y-4 flex flex-col h-full">
+              <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100">
+                <p className="font-semibold mb-1">Como usar:</p>
+                <ol className="list-decimal list-inside space-y-1 text-xs">
+                  <li>Tire uma foto ou selecione uma imagem/PDF do recibo.</li>
+                  <li>Nossa IA (Gemini) extrairá automaticamente os dados.</li>
+                  <li>Revise as informações e salve a transação.</li>
+                </ol>
               </div>
+
+              <div className="flex items-center justify-center w-full">
+                <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    {ocrImage ? (
+                      <img src={ocrImage} alt="Recibo" className="max-h-16 rounded-lg shadow-md" />
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 mb-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <p className="text-xs text-gray-500"><span className="font-semibold">Clique para enviar foto ou PDF</span></p>
+                      </>
+                    )}
+                  </div>
+                  <input ref={ocrInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleOcrImageChange} />
+                </label>
+              </div>
+
+              <textarea
+                value={ocrExtractedText}
+                onChange={(e) => setOcrExtractedText(e.target.value)}
+                placeholder={`Os dados extraídos aparecerão aqui após digitalizar...
+
+Você pode editar manualmente se necessário.`}
+                className="w-full flex-1 min-h-[120px] p-4 rounded-xl border border-gray-200 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                readOnly={loading}
+              />
+
               <button onClick={processOCR} disabled={!ocrImage || loading} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
                 {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : "Digitalizar com Gemini IA"}
               </button>
+
+              {ocrExtractedText && (
+                <button
+                  onClick={() => setActiveTab('manual')}
+                  className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"
+                >
+                  ✓ Revisar e Salvar Transação
+                </button>
+              )}
             </div>
           )}
 
@@ -706,15 +775,23 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
 
               <div className="flex items-center gap-4">
                 <label className="text-sm font-medium text-gray-700">Ano da Fatura:</label>
-                <select
-                  value={invoiceYear}
-                  onChange={(e) => setInvoiceYear(Number(e.target.value))}
-                  className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value={new Date().getFullYear() - 1}>{new Date().getFullYear() - 1}</option>
-                  <option value={new Date().getFullYear()}>{new Date().getFullYear()}</option>
-                  <option value={new Date().getFullYear() + 1}>{new Date().getFullYear() + 1}</option>
-                </select>
+                <div className="relative inline-block">
+                  <select
+                    value={invoiceYear}
+                    onChange={(e) => setInvoiceYear(Number(e.target.value))}
+                    className="pl-3 pr-10 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none cursor-pointer"
+                    style={{ minWidth: '90px' }}
+                  >
+                    <option value={new Date().getFullYear() - 1}>{new Date().getFullYear() - 1}</option>
+                    <option value={new Date().getFullYear()}>{new Date().getFullYear()}</option>
+                    <option value={new Date().getFullYear() + 1}>{new Date().getFullYear() + 1}</option>
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
 
               <textarea
@@ -735,12 +812,54 @@ export const TransactionDialog: React.FC<TransactionDialogProps> = ({
           )}
 
           {activeTab === 'csv' && (
-            <div className="space-y-6">
-              <div className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer border-gray-200 hover:bg-gray-50`} onClick={() => fileInputRef.current?.click()}>
-                <p className="text-sm font-medium text-gray-700">{file ? file.name : 'Clique para selecionar seu CSV'}</p>
-                <input type="file" className="hidden" accept=".csv" ref={fileInputRef} onChange={handleFileChange} />
+            <div className="space-y-4 flex flex-col h-full">
+              <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800 border border-blue-100">
+                <p className="font-semibold mb-1">Como usar:</p>
+                <ol className="list-decimal list-inside space-y-1 text-xs">
+                  <li>Exporte o extrato do seu banco em formato CSV.</li>
+                  <li>Selecione o arquivo CSV exportado abaixo.</li>
+                  <li>O sistema detectará automaticamente as colunas e importará.</li>
+                </ol>
               </div>
-              <button onClick={processCSV} disabled={!file || loading} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 shadow-lg active:scale-95 transition-all">Processar Arquivo</button>
+
+              <div className="flex items-center justify-center w-full">
+                <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 mb-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p className="text-xs text-gray-500"><span className="font-semibold">{file ? file.name : 'Clique para enviar um CSV'}</span></p>
+                  </div>
+                  <input type="file" className="hidden" accept=".csv" ref={fileInputRef} onChange={(e) => {
+                    handleFileChange(e);
+                    // Preview do conteúdo do CSV
+                    const selectedFile = e.target.files?.[0];
+                    if (selectedFile) {
+                      const reader = new FileReader();
+                      reader.onload = (evt) => {
+                        const text = evt.target?.result as string || '';
+                        // Mostra as primeiras 10 linhas como preview
+                        const lines = text.split('\n').slice(0, 10).join('\n');
+                        setCsvPreviewText(lines + (text.split('\n').length > 10 ? '\n...' : ''));
+                      };
+                      reader.readAsText(selectedFile);
+                    }
+                  }} />
+                </label>
+              </div>
+
+              <textarea
+                value={csvPreviewText}
+                onChange={(e) => setCsvPreviewText(e.target.value)}
+                placeholder={`A prévia do arquivo CSV aparecerá aqui após selecioná-lo...
+
+Você também pode colar o conteúdo diretamente.`}
+                className="w-full flex-1 min-h-[120px] p-4 rounded-xl border border-gray-200 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none bg-white"
+              />
+
+              <button onClick={processCSV} disabled={!file || loading} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 shadow-lg active:scale-95 transition-all">
+                {loading ? 'Processando...' : 'Processar Arquivo'}
+              </button>
             </div>
           )}
         </div>

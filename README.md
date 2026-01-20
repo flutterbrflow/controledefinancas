@@ -259,6 +259,11 @@ R: Exporte para Excel ou faça backup do banco MySQL.
 - ✅ Detecção de transações duplicadas na importação CSV
 - ✅ Persistência do Avatar do usuário
 - ✅ Nova Logo e Favicon
+- ✅ **Gráfico de Análise da Poupança** (Aplicações vs Resgates)
+- ✅ **Correção do gráfico Evolução do Saldo** (exclui transações de ajuste)
+- ✅ **Padronização das telas OCR e CSV** (cards explicativos, preview de texto)
+- ✅ **Formatação de datas pt-BR** (DD/MM/YYYY) nos gráficos
+- ✅ Dropdown de Ano da Fatura corrigido
 
 ### v1.1.0 (Janeiro 2025)
 - ✅ Suporte a PDF no OCR de recibos

@@ -41,6 +41,17 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
+  // Função auxiliar para formatar datas em pt-BR (DD/MM/YYYY)
+  const formatDate = (dateStr: string | undefined | null) => {
+    if (!dateStr) return '';
+    // Converte de YYYY-MM-DD para DD/MM/YYYY
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateStr;
+  };
+
   // DADOS PARA GRÁFICO: Fluxo de Caixa nos últimos 6 meses
   const monthlyData = useMemo(() => {
     try {
@@ -102,14 +113,31 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
   // DADOS PARA GRÁFICO: Evolução de Saldo no Mês Atual
   const trendData = useMemo(() => {
     try {
+      // Helper para normalizar strings (igual ao Dashboard)
+      const normalizeStr = (str: string) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : "";
+
+      // Filtra transações da conta corrente (exclui cartão e transações de ajuste)
+      const accountTransactions = transactions.filter(t => {
+        if (t.isCreditCard) return false;
+        const hist = normalizeStr(t.historico);
+        // Exclui transações de ajuste técnicas (igual ao Dashboard)
+        if (
+          (hist.includes('ajuste') && (hist.includes('saldo') || hist.includes('poupanca'))) ||
+          hist.includes('aplicacao poupanca inicial')
+        ) {
+          return false;
+        }
+        return true;
+      });
+
       const now = new Date();
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       const data = [];
       let runningBalance = 0;
       const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-      // Calcula saldo inicial (transações de meses anteriores, apenas conta corrente)
-      transactions.filter(t => !t.isCreditCard).forEach(t => {
+      // Calcula saldo inicial (transações de meses anteriores)
+      accountTransactions.forEach(t => {
         if (!t.data) return;
         const parts = t.data.split('-');
         if (parts.length < 2) return;
@@ -128,8 +156,8 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
       for (let day = 1; day <= lastDay; day++) {
         const dayStr = String(day).padStart(2, '0');
         const currentDateStr = `${currentMonthStr}-${dayStr}`;
-        const dayTotal = transactions
-          .filter(t => t.data === currentDateStr && !t.isCreditCard)
+        const dayTotal = accountTransactions
+          .filter(t => t.data === currentDateStr)
           .reduce((acc, curr) => acc + curr.valor, 0);
 
         runningBalance += dayTotal;
@@ -144,8 +172,8 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
       for (let day = lastDay + 1; day <= daysInMonth; day++) {
         const dayStr = String(day).padStart(2, '0');
         const currentDateStr = `${currentMonthStr}-${dayStr}`;
-        const dayTotal = transactions
-          .filter(t => t.data === currentDateStr && !t.isCreditCard)
+        const dayTotal = accountTransactions
+          .filter(t => t.data === currentDateStr)
           .reduce((acc, curr) => acc + curr.valor, 0);
         futureTrans += dayTotal;
       }
@@ -258,6 +286,58 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
       };
     } catch (e) {
       return { resumo: [], totalGeral: 0, topCategorias: [] };
+    }
+  }, [transactions]);
+
+  // NOVO GRÁFICO: Dados da Poupança (Saldo, Aplicações vs Resgates)
+  const savingsData = useMemo(() => {
+    try {
+      const savingsTransactions = transactions.filter(t => t.isSavings);
+
+      // Saldo total da poupança (invertido: no extrato, aplicação=negativo, resgate=positivo)
+      // Para a poupança: aplicação deve ser positivo (entrada), resgate deve ser negativo (saída)
+      const saldoTotal = Math.round(savingsTransactions.reduce((acc, t) => acc + (-t.valor), 0) * 100) / 100;
+
+      // Dados mensais dos últimos 6 meses (aplicações vs resgates)
+      const now = new Date();
+      const monthlyData: { month: string; aplicacoes: number; resgates: number }[] = [];
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const label = d.toLocaleDateString('pt-BR', { month: 'short' });
+
+        const monthTrans = savingsTransactions.filter(t => t.data?.startsWith(key));
+        // Aplicações: valor negativo no extrato (saída da conta = entrada na poupança)
+        const aplicacoes = Math.round(monthTrans
+          .filter(t => t.valor < 0)
+          .reduce((acc, t) => acc + Math.abs(t.valor), 0) * 100) / 100;
+        // Resgates: valor positivo no extrato (entrada na conta = saída da poupança)
+        const resgates = Math.round(monthTrans
+          .filter(t => t.valor > 0)
+          .reduce((acc, t) => acc + t.valor, 0) * 100) / 100;
+
+        monthlyData.push({ month: label, aplicacoes, resgates });
+      }
+
+      // Top 5 maiores movimentações (aplicações + resgates)
+      const topMovimentacoes = [...savingsTransactions]
+        .sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor))
+        .slice(0, 5)
+        .map(t => ({
+          ...t,
+          valorDisplay: t.valor < 0 ? Math.abs(t.valor) : -t.valor, // Inverte para exibição
+          tipo: t.valor < 0 ? 'aplicacao' : 'resgate'
+        }));
+
+      return {
+        saldoTotal,
+        monthlyData,
+        topMovimentacoes,
+        hasData: savingsTransactions.length > 0
+      };
+    } catch (e) {
+      return { saldoTotal: 0, monthlyData: [], topMovimentacoes: [], hasData: false };
     }
   }, [transactions]);
 
@@ -405,11 +485,11 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
           </div>
         </div>
 
-        {/* Gráfico 2: Saldo (Mês Atual) */}
+        {/* Gráfico 2: Saldo (Mês Atual) - Conta Corrente */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[400px]">
           <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
             <span className="w-2 h-6 bg-green-500 rounded-full"></span>
-            Evolução do Saldo (Mês Atual)
+            Evolução do Saldo - Conta Corrente (Mês Atual)
           </h3>
           <div className="flex-1 min-h-0">
             {trendData.length > 0 ? (
@@ -573,6 +653,62 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
           </div>
         </div>
 
+        {/* Seção de Análise da Poupança */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2">
+          <h3 className="font-bold text-lg text-gray-900 mb-6 flex items-center gap-2">
+            <span className="w-2 h-6 bg-emerald-500 rounded-full"></span>
+            Análise da Poupança
+          </h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Gráfico: Aplicações vs Resgates (6 Meses) */}
+            <div>
+              <h4 className="font-semibold text-gray-700 mb-4">Aplicações vs Resgates (6 Meses)</h4>
+              <div className="h-[200px]">
+                {savingsData.monthlyData.some(m => m.aplicacoes > 0 || m.resgates > 0) ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={savingsData.monthlyData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR')}`} />
+                      <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} formatter={(value: number) => [formatCurrency(value), '']} />
+                      <Legend iconType="circle" />
+                      <Bar dataKey="aplicacoes" name="Aplicações" fill="#10B981" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="resgates" name="Resgates" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-gray-400 italic">Sem movimentações de poupança</div>
+                )}
+              </div>
+              <div className="mt-4 p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
+                <p className="text-sm text-gray-500">Saldo Total da Poupança</p>
+                <p className="text-2xl font-bold text-emerald-600">{formatCurrency(savingsData.saldoTotal)}</p>
+              </div>
+            </div>
+
+            {/* Top Movimentações da Poupança */}
+            <div>
+              <h4 className="font-semibold text-gray-700 mb-4">Maiores Movimentações</h4>
+              <div className="space-y-3">
+                {savingsData.topMovimentacoes.length > 0 ? savingsData.topMovimentacoes.map((t, i) => (
+                  <div key={t.id} className={`flex justify-between items-center p-3 rounded-lg border ${t.tipo === 'aplicacao' ? 'bg-emerald-50 border-emerald-100' : 'bg-orange-50 border-orange-100'}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`w-6 h-6 text-white rounded-full flex items-center justify-center text-xs font-bold ${t.tipo === 'aplicacao' ? 'bg-emerald-500' : 'bg-orange-500'}`}>{i + 1}</span>
+                      <div>
+                        <span className="font-medium text-gray-900 text-sm">{t.historico}</span>
+                        <div className="text-xs text-gray-500">{formatDate(t.data)}</div>
+                      </div>
+                    </div>
+                    <div className={`font-bold text-sm ${t.tipo === 'aplicacao' ? 'text-emerald-600' : 'text-orange-600'}`}>
+                      {t.tipo === 'aplicacao' ? '+' : '-'}{formatCurrency(Math.abs(t.valorDisplay))}
+                    </div>
+                  </div>
+                )) : <p className="text-gray-400 text-sm italic text-center py-8">Nenhuma movimentação de poupança registrada</p>}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Conselheiro IA Gemini */}
         <div className="bg-blue-900 rounded-2xl shadow-lg p-6 text-white overflow-hidden relative flex flex-col h-[400px] no-print lg:col-span-2">
           <div className="relative z-10 h-full flex flex-col">
@@ -614,7 +750,7 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
                 <div key={t.id} className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100">
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-gray-900 text-sm truncate">{t.historico}</div>
-                    <div className="text-xs text-gray-500">{t.dependenciaOrigem} • {t.data}</div>
+                    <div className="text-xs text-gray-500">{t.dependenciaOrigem} • {formatDate(t.data)}</div>
                   </div>
                   <div className="font-bold text-green-600 text-sm">{formatCurrency(t.valor)}</div>
                 </div>
@@ -633,7 +769,7 @@ export const Reports: React.FC<ReportsProps> = ({ user }) => {
                 <div key={t.id} className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-100">
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-gray-900 text-sm truncate">{t.historico}</div>
-                    <div className="text-xs text-gray-500">{t.dependenciaOrigem} • {t.data}</div>
+                    <div className="text-xs text-gray-500">{t.dependenciaOrigem} • {formatDate(t.data)}</div>
                   </div>
                   <div className="font-bold text-red-600 text-sm">{formatCurrency(t.valor)}</div>
                 </div>

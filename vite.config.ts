@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       proxy: {
         '/api': {
-          target: 'http://localhost/controledefinancas', // Adjust this to your local PHP server path
+          target: 'http://localhost/controledefinancas', // Ajuste para o caminho do seu servidor PHP local
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, '/api')
         }

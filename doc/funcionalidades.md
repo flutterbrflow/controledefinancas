@@ -81,6 +81,11 @@ const saldoTotal = Math.round(total * 100) / 100;
 - Gera `.xlsx` com todas as transações
 - Formatação automática de moeda, data, etc.
 
+### Análise da Poupança
+- **Gráfico Aplicações vs Resgates**: Bar chart dos últimos 6 meses
+- **Saldo Total da Poupança**: Card em destaque
+- **Maiores Movimentações**: Top 5 aplicações/resgates com datas formatadas
+
 ## 4. 🎯 Metas Financeiras
 
 **Arquivo**: `components/Goals.tsx`
